@@ -1,4 +1,5 @@
-import { richNotes, type MeetingRow, type ProjectFolder } from './fixtures'
+import { notesFor } from '../features/desk/notesIndex'
+import type { MeetingRow, ProjectFolder } from './fixtures'
 
 export type SearchScope = 'all' | 'people' | 'topics' | 'actions' | 'projects'
 
@@ -58,7 +59,7 @@ function candidatesFor(meeting: MeetingRow, project: ProjectFolder | null): Cand
     candidates.push({ kind: 'project', label: 'Project', text: 'Unfiled', weight: 2 })
   }
 
-  const notes = richNotes[meeting.id]
+  const notes = notesFor(meeting.id)
   if (notes) {
     candidates.push({ kind: 'summary', label: 'Summary', text: notes.summary, weight: 4 })
     for (const takeaway of notes.takeaways) {

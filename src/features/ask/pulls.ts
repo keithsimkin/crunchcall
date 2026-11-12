@@ -1,4 +1,5 @@
-import { richNotes, type MeetingRow } from '../../ui/fixtures'
+import { notesFor } from '../desk/notesIndex'
+import type { MeetingRow } from '../../ui/fixtures'
 import type { AskFocus } from './context'
 
 export type AskPull = {
@@ -86,7 +87,7 @@ export function pullsForAsk(input: {
   const scored: { pull: AskPull; score: number }[] = []
 
   for (const meeting of input.rows) {
-    const notes = richNotes[meeting.id]
+    const notes = notesFor(meeting.id)
     const boost = prefer.has(meeting.id) ? 2 : 0
     const titleHit = needles.some((token) => meeting.title.toLowerCase().includes(token))
     if (!notes) {
@@ -141,7 +142,7 @@ export function pullsForAsk(input: {
 
   for (const meeting of input.rows) {
     if (!prefer.has(meeting.id)) continue
-    const notes = richNotes[meeting.id]
+    const notes = notesFor(meeting.id)
     if (!notes?.utterances.length) {
       pulls.push({
         id: `notes:${meeting.id}`,

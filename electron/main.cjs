@@ -1,14 +1,24 @@
-const { app, BrowserWindow, ipcMain, nativeImage, Notification, Tray, Menu, globalShortcut, clipboard, screen, shell } =
+const { app, BrowserWindow, ipcMain, nativeImage, Notification, Tray, Menu, globalShortcut, clipboard, screen, shell, safeStorage, session, desktopCapturer } =
   require('electron')
 const path = require('path')
 const { execFile } = require('child_process')
 const sidecar = require('./sidecar.cjs')
+const { createCalendarAccounts, loadClientIds } = require('./calendar-accounts.cjs')
+const updates = require('./updates.cjs')
+const license = require('./license.cjs')
+
+const BUY_URL = 'https://annotated.click/buy'
 
 const devUrl = process.env.CRUNCHCALL_DEV_URL || 'http://127.0.0.1:5173/#app'
-const iconPath = path.join(__dirname, 'icon.png')
+const iconPath = path.join(__dirname, process.platform === 'win32' ? 'icon.ico' : 'icon.png')
 const trayIconPath = path.join(__dirname, process.platform === 'win32' ? 'icon-16.png' : 'icon.png')
 const appIcon = nativeImage.createFromPath(iconPath)
 const trayIcon = nativeImage.createFromPath(trayIconPath)
+
+// Windows paints the taskbar from a shortcut that carries this id. The tray is
+// given icon-16.png directly, but `electron .` is electron.exe, so the taskbar
+// stays the Electron mark until a shortcut points at icon.ico.
+const APP_USER_MODEL_ID = 'click.annotated.app'
 
 // The window chrome is drawn by the app itself: no OS title bar, just the
 // native caption buttons floating on the same canvas colour as the sidebar.
@@ -25,8 +35,58 @@ let watching = false
 let quitting = false
 let toldTray = false
 let dictateArmed = false
+let overlayWin = null
+let loopbackArmed = false
+let authenticity = license.describeAuthenticity({ packaged: app.isPackaged, signature: null })
 
-app.setAppUserModelId('CrunchCall')
+app.setAppUserModelId(APP_USER_MODEL_ID)
+
+function windowsLaunch() {
+  if (app.isPackaged) {
+    const cwd = path.dirname(process.execPath)
+    return { cwd, args: '', command: `"${process.execPath}"` }
+  }
+  const cwd = app.getAppPath()
+  const args = `"${cwd}"`
+  return { cwd, args, command: `"${process.execPath}" ${args}` }
+}
+
+function ensureWindowsTaskbarIcon() {
+  if (process.platform !== 'win32' || app.isPackaged) return
+  const { cwd, args } = windowsLaunch()
+  const programs = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+  const shortcutPath = path.join(programs, 'annotated.lnk')
+  try {
+    require('fs').unlinkSync(path.join(programs, 'CrunchCall.lnk'))
+  } catch {
+    // The previous shortcut is already gone.
+  }
+  try {
+    shell.writeShortcutLink(shortcutPath, 'create', {
+      target: process.execPath,
+      args,
+      cwd,
+      icon: iconPath,
+      iconIndex: 0,
+      appUserModelId: APP_USER_MODEL_ID,
+      description: 'annotated',
+    })
+  } catch {
+    // A missing shortcut only affects the taskbar glyph. Still open the app.
+  }
+}
+
+function applyWindowsTaskbarIcon(window) {
+  if (process.platform !== 'win32') return
+  const { command } = windowsLaunch()
+  window.setAppDetails({
+    appId: APP_USER_MODEL_ID,
+    appIconPath: iconPath,
+    appIconIndex: 0,
+    relaunchCommand: command,
+    relaunchDisplayName: 'annotated',
+  })
+}
 
 function showMain() {
   if (!win) return
@@ -36,7 +96,38 @@ function showMain() {
 }
 
 function trayTooltip() {
-  return watching ? 'CrunchCall is watching your calendar' : 'CrunchCall'
+  return watching ? 'annotated is watching your calendar' : 'annotated'
+}
+
+let pendingTrayCommand = null
+let flushBound = false
+let tooltipTimer = null
+
+function trayMenu() {
+  return Menu.buildFromTemplate([
+    { label: 'Open annotated', click: showMain },
+    { label: 'Open dashboard', click: () => openSection('dashboard') },
+    { label: 'Start a meeting', click: () => openSection('meeting') },
+    { label: dictateArmed ? 'Stop dictating' : 'Dictate', click: () => toggleDictateHotkey() },
+    { type: 'separator' },
+    { label: 'Calendar', click: () => openSection('calendar') },
+    { label: 'Projects', click: () => openSection('projects') },
+    { type: 'separator' },
+    { label: 'Settings', click: () => openSection('settings') },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        quitting = true
+        app.quit()
+      },
+    },
+  ])
+}
+
+function rebuildTrayMenu() {
+  if (!tray) return
+  tray.setContextMenu(trayMenu())
 }
 
 function ensureTray() {
@@ -47,30 +138,81 @@ function ensureTray() {
   const icon = trayIcon.isEmpty() ? appIcon : trayIcon
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
   tray.setToolTip(trayTooltip())
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Open CrunchCall', click: showMain },
-      { type: 'separator' },
-      {
-        label: 'Quit',
-        click: () => {
-          quitting = true
-          app.quit()
-        },
-      },
-    ]),
-  )
+  rebuildTrayMenu()
   tray.on('click', showMain)
 }
 
-function barUrl() {
-  try {
-    const url = new URL(devUrl)
-    url.hash = 'dictate-bar'
-    return url.toString()
-  } catch {
-    return 'http://127.0.0.1:5173/#dictate-bar'
+function openSection(command) {
+  showMain()
+  deliverCommand(command)
+}
+
+function deliverCommand(command) {
+  pendingTrayCommand = command
+  flushCommand()
+}
+
+function flushCommand() {
+  const target = win
+  if (!target || target.isDestroyed() || !pendingTrayCommand) return
+  if (target.webContents.isLoading()) {
+    if (flushBound) return
+    flushBound = true
+    target.webContents.once('did-finish-load', () => {
+      flushBound = false
+      flushCommand()
+    })
+    return
   }
+  const next = pendingTrayCommand
+  pendingTrayCommand = null
+  target.webContents.send('app:command', next)
+}
+
+function loadSurface(target, hash) {
+  if (!app.isPackaged) {
+    try {
+      const url = new URL(devUrl)
+      url.hash = hash
+      target.loadURL(url.toString())
+      return
+    } catch {
+      target.loadURL(`http://127.0.0.1:5173/#${hash}`)
+      return
+    }
+  }
+  target.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash })
+}
+
+function releaseLink(value) {
+  let parsed
+  try {
+    parsed = new URL(String(value || ''))
+  } catch {
+    return null
+  }
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com') return null
+  if (!parsed.pathname.startsWith('/keithsimkin/crunchcall')) return null
+  return parsed.toString()
+}
+
+function announce(payload) {
+  const title = payload && typeof payload.title === 'string' ? payload.title.slice(0, 120).trim() : ''
+  if (!title) return
+  const body = payload && typeof payload.body === 'string' ? payload.body.slice(0, 180).trim() : ''
+  const url = payload && payload.url ? releaseLink(payload.url) : null
+  if (tray) {
+    tray.setToolTip(`${title}${body ? `. ${body}` : ''}`.slice(0, 120))
+    clearTimeout(tooltipTimer)
+    tooltipTimer = setTimeout(() => {
+      if (tray) tray.setToolTip(trayTooltip())
+    }, 5000)
+  }
+  if (payload && payload.focus) showMain()
+  if (!Notification.isSupported()) return
+  const note = new Notification({ title, body: body || title })
+  if (url) note.on('click', () => shell.openExternal(url))
+  note.show()
 }
 
 function ensureDictateBar() {
@@ -105,10 +247,11 @@ function ensureDictateBar() {
   })
   dictateWin.setAlwaysOnTop(true, 'screen-saver')
   dictateWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  dictateWin.loadURL(barUrl())
+  loadSurface(dictateWin, 'dictate-bar')
   dictateWin.on('closed', () => {
     dictateWin = null
     dictateArmed = false
+    rebuildTrayMenu()
   })
   return dictateWin
 }
@@ -122,6 +265,7 @@ function showDictateBar() {
 
 function hideDictateBar() {
   dictateArmed = false
+  rebuildTrayMenu()
   if (!dictateWin || dictateWin.isDestroyed()) return
   dictateWin.hide()
 }
@@ -131,11 +275,13 @@ function toggleDictateHotkey() {
   if (!dictateArmed) {
     dictateArmed = true
     showDictateBar()
+    rebuildTrayMenu()
     bar.webContents.send('dictate:hotkey', 'start')
     return
   }
   dictateArmed = false
   bar.webContents.send('dictate:hotkey', 'stop')
+  rebuildTrayMenu()
 }
 
 function pasteText(text) {
@@ -169,6 +315,44 @@ function pasteText(text) {
   })
 }
 
+function ensureOverlay() {
+  if (overlayWin && !overlayWin.isDestroyed()) return overlayWin
+  const display = screen.getPrimaryDisplay().workArea
+  const width = 320
+  const height = 150
+  overlayWin = new BrowserWindow({
+    width,
+    height,
+    x: Math.round(display.x + display.width - width - 24),
+    y: Math.round(display.y + 24),
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    skipTaskbar: true,
+    focusable: false,
+    alwaysOnTop: true,
+    hasShadow: false,
+    show: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  })
+  overlayWin.setAlwaysOnTop(true, 'screen-saver')
+  overlayWin.setContentProtection(true)
+  overlayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  loadSurface(overlayWin, 'overlay')
+  overlayWin.on('closed', () => {
+    overlayWin = null
+  })
+  return overlayWin
+}
+
 function createWindow() {
   const isMac = process.platform === 'darwin'
   const chrome = chromeThemes.dark
@@ -178,7 +362,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 640,
     backgroundColor: chrome.canvas,
-    title: 'CrunchCall',
+    title: 'annotated',
     icon: appIcon.isEmpty() ? undefined : appIcon,
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     ...(isMac
@@ -195,7 +379,11 @@ function createWindow() {
     },
   })
 
-  win.once('ready-to-show', () => win.show())
+  applyWindowsTaskbarIcon(win)
+  win.once('ready-to-show', () => {
+    if (!appIcon.isEmpty()) win.setIcon(appIcon)
+    win.show()
+  })
   win.on('close', (event) => {
     // Keep the process alive in the tray. Quit only from the tray menu.
     if (quitting) return
@@ -205,19 +393,96 @@ function createWindow() {
     if (toldTray || !Notification.isSupported()) return
     toldTray = true
     new Notification({
-      title: 'CrunchCall is still running',
+      title: 'annotated is still running',
       body: watching
         ? 'You will get a prompt when a meeting starts. Quit from the tray icon to stop.'
         : 'Quit from the tray icon when you are done. Hold Ctrl+Win to dictate anywhere.',
     }).show()
   })
-  win.loadURL(devUrl)
+  loadSurface(win, 'app')
 }
 
 function readableError(error) {
   if (error && error.name === 'AbortError') return 'The calendar took too long to answer.'
   return "Couldn't reach that calendar."
 }
+
+let calendarAccounts = null
+
+function accounts() {
+  if (calendarAccounts) return calendarAccounts
+  calendarAccounts = createCalendarAccounts({
+    file: path.join(app.getPath('userData'), 'calendar-accounts.json'),
+    encrypt: (text) => {
+      if (!safeStorage.isEncryptionAvailable()) return null
+      return safeStorage.encryptString(text).toString('base64')
+    },
+    decrypt: (encoded) => safeStorage.decryptString(Buffer.from(encoded, 'base64')),
+    openExternal: (url) => shell.openExternal(url),
+    clientIds: loadClientIds(),
+  })
+  return calendarAccounts
+}
+
+function asProvider(value) {
+  return value === 'google' || value === 'microsoft' ? value : null
+}
+
+function asCalendars(value) {
+  if (!Array.isArray(value)) return []
+  const chosen = []
+  for (const item of value) {
+    if (!item || typeof item.id !== 'string' || typeof item.name !== 'string') continue
+    const id = item.id.trim()
+    const name = item.name.replace(/\s+/g, ' ').trim()
+    if (!id || id.length > 1024 || !name || name.length > 200) continue
+    chosen.push({ id, name })
+    if (chosen.length >= 20) break
+  }
+  return chosen
+}
+
+function asRange(value) {
+  if (!value || typeof value.start !== 'number' || typeof value.end !== 'number') return null
+  if (!Number.isFinite(value.start) || !Number.isFinite(value.end)) return null
+  const span = value.end - value.start
+  if (span <= 0 || span > 40 * 24 * 60 * 60 * 1000) return null
+  return { start: value.start, end: value.end }
+}
+
+ipcMain.handle('calendar:sign-in', () => accounts().status())
+
+ipcMain.handle('calendar:connect', (_event, provider) => {
+  const name = asProvider(provider)
+  if (!name) return { ok: false, error: 'Choose Google or Outlook.' }
+  return accounts().connect(name)
+})
+
+ipcMain.handle('calendar:choices', (_event, provider) => {
+  const name = asProvider(provider)
+  if (!name) return { ok: false, error: 'Choose Google or Outlook.' }
+  return accounts().list(name)
+})
+
+ipcMain.handle('calendar:sync-account', (_event, provider, calendars, range) => {
+  const name = asProvider(provider)
+  if (!name) return { ok: false, error: 'Choose Google or Outlook.' }
+  const chosen = asCalendars(calendars)
+  const window = asRange(range)
+  if (chosen.length === 0) return { ok: false, error: 'Choose at least one calendar.' }
+  if (!window) return { ok: false, error: "Couldn't read that calendar window." }
+  return accounts().sync(name, chosen, window)
+})
+
+ipcMain.handle('calendar:disconnect', (_event, provider) => {
+  const name = asProvider(provider)
+  if (!name) return
+  accounts().disconnect(name)
+})
+
+ipcMain.handle('calendar:cancel-sign-in', () => {
+  accounts().cancel()
+})
 
 ipcMain.handle('calendar:fetch', async (_event, url) => {
   let parsed
@@ -235,7 +500,7 @@ ipcMain.handle('calendar:fetch', async (_event, url) => {
     const response = await fetch(parsed, {
       signal: controller.signal,
       redirect: 'follow',
-      headers: { Accept: 'text/calendar, text/plain, */*', 'User-Agent': 'CrunchCall' },
+      headers: { Accept: 'text/calendar, text/plain, */*', 'User-Agent': 'annotated' },
     })
     if (!response.ok) return { ok: false, error: `The calendar site returned ${response.status}.` }
     const text = await response.text()
@@ -251,14 +516,12 @@ ipcMain.handle('calendar:fetch', async (_event, url) => {
 ipcMain.handle('calendar:notify', (_event, payload) => {
   if (!payload || typeof payload.instanceKey !== 'string' || typeof payload.title !== 'string') return
   if (!Notification.isSupported()) return
-  const instanceKey = payload.instanceKey
   const note = new Notification({
     title: payload.title.slice(0, 120) || 'Meeting starting',
-    body: typeof payload.body === 'string' ? payload.body.slice(0, 180) : 'Turn CrunchCall on for this meeting?',
+    body: typeof payload.body === 'string' ? payload.body.slice(0, 180) : 'Turn annotated on for this meeting?',
   })
   note.on('click', () => {
     showMain()
-    win?.webContents.send('calendar:start', instanceKey)
   })
   note.show()
 })
@@ -293,6 +556,17 @@ ipcMain.handle('dictate:hide', () => {
   hideDictateBar()
 })
 
+ipcMain.handle('app:update-settled', () => {})
+
+ipcMain.handle('update:status', () => updates.updateStatus())
+
+ipcMain.handle('update:install', () => updates.installUpdate())
+
+ipcMain.handle('app:announce', (event, payload) => {
+  if (!win || event.sender !== win.webContents) return
+  announce(payload)
+})
+
 ipcMain.handle('shell:open', async (_event, url) => {
   let parsed
   try {
@@ -305,9 +579,103 @@ ipcMain.handle('shell:open', async (_event, url) => {
   await shell.openExternal(parsed.toString())
 })
 
+ipcMain.handle('audio:arm-loopback', () => {
+  loopbackArmed = true
+})
+
+function fromMain(event) {
+  return Boolean(win && event.sender === win.webContents)
+}
+
+function currentLicenseStatus() {
+  const stored = license.readStored(app.getPath('userData'), license.bundledPublicKey())
+  return license.publicStatus(stored, authenticity)
+}
+
+async function refreshAuthenticity() {
+  if (!app.isPackaged || process.platform !== 'win32') {
+    authenticity = license.describeAuthenticity({ packaged: app.isPackaged, signature: null })
+    return
+  }
+  try {
+    const signature = await license.readAuthenticode(process.execPath)
+    authenticity = license.describeAuthenticity({ packaged: true, signature })
+  } catch {
+    authenticity = license.describeAuthenticity({ packaged: true, signature: null })
+  }
+}
+
+ipcMain.handle('license:status', () => currentLicenseStatus())
+
+ipcMain.handle('license:activate', (event, token) => {
+  if (!fromMain(event)) return { ok: false, message: 'Open the main window to add a license.' }
+  const saved = license.writeStored(app.getPath('userData'), String(token || ''), license.bundledPublicKey())
+  if (!saved.ok) return { ok: false, message: license.explainReason(saved.reason) }
+  return { ok: true, status: currentLicenseStatus() }
+})
+
+ipcMain.handle('license:clear', (event) => {
+  if (!fromMain(event)) return currentLicenseStatus()
+  license.clearStored(app.getPath('userData'))
+  if (overlayWin && !overlayWin.isDestroyed()) overlayWin.hide()
+  return currentLicenseStatus()
+})
+
+ipcMain.handle('license:buy', async (event) => {
+  if (!fromMain(event)) return
+  await shell.openExternal(BUY_URL)
+})
+
+ipcMain.handle('overlay:set', (event, cue) => {
+  if (!fromMain(event)) return { ok: false }
+  const unlocked = currentLicenseStatus().tier === 'unlock'
+  const message = cue && typeof cue.message === 'string' ? cue.message.trim() : ''
+  if (!unlocked || !message) {
+    if (overlayWin && !overlayWin.isDestroyed()) overlayWin.hide()
+    return { ok: false, locked: !unlocked }
+  }
+  const bar = ensureOverlay()
+  bar.setContentProtection(true)
+  bar.webContents.send('overlay:cue', {
+    label: typeof cue.label === 'string' ? cue.label : 'Live cue',
+    message,
+  })
+  if (bar.isMinimized()) bar.restore()
+  bar.showInactive()
+})
+
+ipcMain.handle('app:login-get', () => Boolean(app.getLoginItemSettings().openAtLogin))
+
+ipcMain.handle('app:login-set', (_event, on) => {
+  app.setLoginItemSettings({ openAtLogin: Boolean(on) })
+})
+
 app.whenReady().then(() => {
+  void refreshAuthenticity()
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    if (!loopbackArmed) {
+      callback({})
+      return
+    }
+    loopbackArmed = false
+    desktopCapturer
+      .getSources({ types: ['screen'] })
+      .then((sources) => {
+        if (!sources[0]) {
+          callback({})
+          return
+        }
+        callback({ video: sources[0], audio: 'loopback' })
+      })
+      .catch(() => callback({}))
+  })
   if (process.platform === 'darwin' && !appIcon.isEmpty()) app.dock.setIcon(appIcon)
+  ensureWindowsTaskbarIcon()
+  updates.startUpdater(() => {
+    quitting = true
+  })
   createWindow()
+  void updates.checkForAppUpdate()
   // Ctrl+Win on Windows / Ctrl+Cmd on macOS — toggle the system dictate bar.
   const chord = process.platform === 'darwin' ? 'Control+Meta' : 'Control+Super'
   try {

@@ -23,15 +23,14 @@ import {
 } from './icons'
 import {
   cueOptions,
-  inputDevices,
   settingsItems,
   supportItems,
   type SettingsHandlers,
   type SettingsSection,
   type SupportActionId,
 } from './settingsState'
-import type { UpdateController } from './useUpdates'
-import { updateHelp } from './updates'
+import { appVersion } from './updates'
+import { BUY_URL, type LicenseDesk } from './useLicense'
 
 type PlaceId = 'local' | 'cloud' | 'external'
 
@@ -59,7 +58,11 @@ const pages: Record<SettingsSection, { title: string; lede: string }> = {
   },
   machine: {
     title: 'This PC',
-    lede: 'Name, appearance, startup, and updates for this copy.',
+    lede: 'Name, appearance, and startup for this copy.',
+  },
+  license: {
+    title: 'License',
+    lede: 'One-time unlock for live coaching and Markdown export. Checked on this PC.',
   },
 }
 
@@ -73,7 +76,7 @@ export function SettingsDialog({
   onRunSetup,
   onRestore,
   onOpenHelp,
-  update,
+  license,
 }: {
   section: SettingsSection
   onSection: (next: SettingsSection) => void
@@ -84,7 +87,7 @@ export function SettingsDialog({
   onRunSetup: () => void
   onRestore: () => void
   onOpenHelp: () => void
-  update: UpdateController
+  license: LicenseDesk
 }) {
   const sheetRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -243,7 +246,9 @@ export function SettingsDialog({
           </header>
           <div className="pop-scroll">
             {settings.engineError ? <p className="pop-alert">{settings.engineError}</p> : null}
-            {section === 'listening' ? <Listening settings={settings} onSection={onSection} /> : null}
+            {section === 'listening' ? (
+              <Listening settings={settings} onSection={onSection} unlocked={license.unlocked} />
+            ) : null}
             {section === 'speech' ? <SpeechPage settings={settings} /> : null}
             {section === 'notes' ? <NotesPage settings={settings} /> : null}
             {section === 'machine' ? (
@@ -253,9 +258,9 @@ export function SettingsDialog({
                 onName={onName}
                 onRunSetup={onRunSetup}
                 onRestore={onRestore}
-                update={update}
               />
             ) : null}
+            {section === 'license' ? <LicensePage license={license} /> : null}
           </div>
         </div>
       </div>
@@ -263,10 +268,43 @@ export function SettingsDialog({
   )
 }
 
-function Listening({ settings, onSection }: { settings: SettingsHandlers; onSection: (next: SettingsSection) => void }) {
+function Listening({
+  settings,
+  onSection,
+  unlocked,
+}: {
+  settings: SettingsHandlers
+  onSection: (next: SettingsSection) => void
+  unlocked: boolean
+}) {
   const { input, setInput, showCues, setShowCues, cues, toggleCue, language, setLanguage, speechId } = settings
   const speech = engineById(speechId) ?? engineById(engineDefaults.speech)
-  const current = inputDevices.find((item) => item.id === input)
+  const [mics, setMics] = useState([{ id: 'default', name: 'Default' }])
+  useEffect(() => {
+    if (!navigator.mediaDevices?.enumerateDevices) return
+    let cancel = false
+    async function load() {
+      let list = await navigator.mediaDevices.enumerateDevices()
+      const inputs = () => list.filter((item) => item.kind === 'audioinput' && item.deviceId)
+      if (inputs().length > 0 && inputs().every((item) => !item.label)) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+          stream.getTracks().forEach((track) => track.stop())
+          list = await navigator.mediaDevices.enumerateDevices()
+        } catch {
+          /* names stay hidden until the microphone is allowed */
+        }
+      }
+      if (cancel) return
+      const found = inputs().map((item, index) => ({ id: item.deviceId, name: item.label || `Microphone ${index + 1}` }))
+      if (found.length) setMics([{ id: 'default', name: 'Default' }, ...found])
+    }
+    void load()
+    return () => {
+      cancel = true
+    }
+  }, [])
+  const current = mics.find((item) => item.id === input) ?? mics[0]
   const cuesOn = cueOptions.filter((cue) => cues[cue.id]).length
 
   return (
@@ -285,17 +323,17 @@ function Listening({ settings, onSection }: { settings: SettingsHandlers; onSect
           title="Input"
           help={
             input === 'default'
-              ? 'Using the default input on this PC. CrunchCall never joins the call.'
-              : `Using ${current?.name}. CrunchCall never joins the call.`
+              ? 'Using the default input on this PC. annotated never joins the call.'
+              : `Using ${current?.name}. annotated never joins the call.`
           }
         >
           <select
             className="input-select"
             aria-label="Input"
-            value={input}
+            value={mics.some((item) => item.id === input) ? input : 'default'}
             onChange={(event) => setInput(event.target.value as typeof input)}
           >
-            {inputDevices.map((item) => (
+            {mics.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name}
               </option>
@@ -343,6 +381,9 @@ function Listening({ settings, onSection }: { settings: SettingsHandlers; onSect
             <p className="overlay-safe">{showCues ? 'Not on your screen share' : 'Cues are off'}</p>
           </aside>
         </div>
+        {unlocked ? null : (
+          <p className="pop-note">The overlay turns on with Unlock. Notes on this PC stay free.</p>
+        )}
       </Section>
     </div>
   )
@@ -379,7 +420,7 @@ function SpeechPage({ settings }: { settings: SettingsHandlers }) {
         selected?.where === 'cloud'
           ? `${selected.maker} hears the audio. Keys stay in Windows Credential Manager.`
           : selected?.where === 'external'
-            ? `${selected.name} hears the mic. CrunchCall keeps the text you give it.`
+            ? `${selected.name} hears the mic. annotated keeps the text you give it.`
             : 'Speech stays on this PC. Keys stay in Windows Credential Manager.'
       }
     />
@@ -941,20 +982,144 @@ function DownloadMeter({ install }: { install: InstallRow }) {
   )
 }
 
+function installerLabel(status: LicenseDesk['status'], desktop: boolean) {
+  if (!status) return desktop ? 'Checking' : 'Desktop app'
+  if (status.authenticity === 'genuine') return 'Signed'
+  if (status.authenticity === 'development') return 'Development'
+  if (status.authenticity === 'unsigned') return 'Not signed'
+  if (status.authenticity === 'tampered') return 'Altered'
+  if (status.authenticity === 'untrusted') return 'Not trusted'
+  return 'Unknown'
+}
+
+function LicensePage({ license }: { license: LicenseDesk }) {
+  const { desktop, status, refresh } = license
+  const [token, setToken] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const unlocked = status?.tier === 'unlock'
+  const plan = !desktop ? 'Checked in the desktop app' : unlocked ? 'Unlock' : 'Free'
+
+  async function buy() {
+    if (window.crunchcall?.buyLicense) {
+      await window.crunchcall.buyLicense()
+      return
+    }
+    window.open(BUY_URL, '_blank', 'noopener,noreferrer')
+  }
+
+  async function activate() {
+    const activateLicense = window.crunchcall?.activateLicense
+    if (!activateLicense) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await activateLicense(token.trim())
+      if (!result.ok) {
+        setError(result.message)
+        return
+      }
+      setToken('')
+      await refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove() {
+    const clearLicense = window.crunchcall?.clearLicense
+    if (!clearLicense) return
+    setBusy(true)
+    setError('')
+    try {
+      await clearLicense()
+      await refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="page-split">
+      <div>
+        <Section label="This copy">
+          <Row title="Plan" help={unlocked ? `Licensed to ${status?.email}.` : 'Local notes, transcription, and search stay free.'}>
+            <span className="pop-value">{plan}</span>
+          </Row>
+          {status?.order ? (
+            <Row title="Order" help="The payment this license came from.">
+              <span className="pop-value">{status.order}</span>
+            </Row>
+          ) : null}
+          <Row
+            title="Installer"
+            help={
+              status?.detail ??
+              (desktop ? 'Checking this copy…' : 'Open the desktop app to check this copy.')
+            }
+          >
+            <span className="pop-value">{installerLabel(status, desktop)}</span>
+          </Row>
+        </Section>
+        {status?.authenticity === 'tampered' ? <p className="pop-alert">{status.detail}</p> : null}
+        {status?.license === 'invalid' ? <p className="pop-alert">The saved license is not valid.</p> : null}
+      </div>
+      <div>
+        <Section label="Add a license">
+          {desktop ? (
+            <Row title="License" help="Paste the license from the payment page." stack>
+              <textarea
+                className="license-field"
+                aria-label="License"
+                spellCheck={false}
+                autoComplete="off"
+                value={token}
+                onChange={(event) => setToken(event.target.value)}
+                placeholder="annotated1…"
+              />
+              <div className="head-actions">
+                <button type="button" className="btn small primary" disabled={busy || !token.trim()} onClick={() => void activate()}>
+                  Activate
+                </button>
+                {status?.license === 'valid' ? (
+                  <button type="button" className="btn small ghost" disabled={busy} onClick={() => void remove()}>
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+            </Row>
+          ) : (
+            <Row title="License" help="The desktop app stores the license on this PC and checks it offline.">
+              <span className="pop-value">Desktop app</span>
+            </Row>
+          )}
+          <Row title="Buy Unlock" help="One payment. You get the license and the signed installer.">
+            <button type="button" className="btn small primary" onClick={() => void buy()}>
+              Buy Unlock
+            </button>
+          </Row>
+        </Section>
+        {error ? <p className="pop-alert">{error}</p> : null}
+        <p className="pop-note standalone">
+          A license that was altered does not unlock this PC. A copy of the app that was changed after signing stays on the free plan.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function Machine({
   settings,
   name,
   onName,
   onRunSetup,
   onRestore,
-  update,
 }: {
   settings: SettingsHandlers
   name: string
   onName: (name: string) => void
   onRunSetup: () => void
   onRestore: () => void
-  update: UpdateController
 }) {
   const { launchAtLogin, setLaunchAtLogin, theme, setTheme } = settings
   const [armed, setArmed] = useState(false)
@@ -998,30 +1163,18 @@ function Machine({
       </div>
       <div>
       <Section label="This copy">
-        <Row title="Launch at login" help="Open CrunchCall when Windows starts.">
+        <Row title="Launch at login" help="Open annotated when Windows starts.">
           <Switch on={launchAtLogin} label="Launch at login" onClick={() => setLaunchAtLogin((value) => !value)} />
         </Row>
-        <Row title="Version" help="This copy on this PC. Paid unlock on the Store. The local mode needs no account.">
-          <span className="pop-value">{update.current}</span>
-        </Row>
-        <Row title="Updates" help={updateHelp(update)}>
-          <div className="head-actions update-actions">
-            {update.phase === 'available' ? (
-              <button type="button" className="btn small primary" onClick={update.open}>
-                Update the app.
-              </button>
-            ) : null}
-            <button type="button" className="btn small ghost" onClick={update.check} disabled={update.phase === 'checking'}>
-              {update.phase === 'checking' ? 'Checking…' : 'Check for updates'}
-            </button>
-          </div>
+        <Row title="Version" help="This copy on this PC. Local mode needs no account.">
+          <span className="pop-value">{appVersion}</span>
         </Row>
         <Row
           title="Restore defaults"
           help={
             armed
-              ? 'This clears your name, calendar link, and settings on this PC, and brings the sample meetings back.'
-              : 'Put this PC back to a fresh CrunchCall.'
+              ? 'This clears your name, calendar sign-in, settings, and meetings on this PC.'
+              : 'Put this PC back to a fresh copy of annotated.'
           }
         >
           {armed ? (

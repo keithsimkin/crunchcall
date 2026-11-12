@@ -1,4 +1,4 @@
-# CrunchCall product brief
+# annotated product brief
 
 > **Superseded.** Canonical product scope, non-goals, and roadmap live in [`PLAN.md`](./PLAN.md). Do not treat this file as source of truth.
 

@@ -422,6 +422,7 @@ pub fn transcribe_with(
     model: &str,
     key: &str,
     wav: &[u8],
+    language: &str,
 ) -> Result<SpeechOutcome, EngineError> {
     if is_unlinked_runtime(runtime) {
         return Err(EngineError::new(
@@ -431,13 +432,13 @@ pub fn transcribe_with(
     }
     match runtime {
         "openai-audio" => {
-            let request = build_openai_audio(base_url, model, key, wav)?;
+            let request = build_openai_audio(base_url, model, key, wav, language)?;
             let response = transport.send(&request)?;
             let value = parse_json(&response, &secrets_from_headers(&request.headers))?;
             Ok(SpeechOutcome::Text(required_text(&value, "text", &response)?))
         }
         "deepgram" => {
-            let request = build_deepgram(base_url, model, key, wav)?;
+            let request = build_deepgram(base_url, model, key, wav, language)?;
             let response = transport.send(&request)?;
             let value = parse_json(&response, &secrets_from_headers(&request.headers))?;
             let text = value
@@ -447,18 +448,18 @@ pub fn transcribe_with(
             Ok(SpeechOutcome::Text(text.to_string()))
         }
         "elevenlabs" => {
-            let request = build_elevenlabs(base_url, model, key, wav)?;
+            let request = build_elevenlabs(base_url, model, key, wav, language)?;
             let response = transport.send(&request)?;
             let value = parse_json(&response, &secrets_from_headers(&request.headers))?;
             Ok(SpeechOutcome::Text(required_text(&value, "text", &response)?))
         }
         "google" => {
-            let request = build_google_speech(base_url, model, key, wav)?;
+            let request = build_google_speech(base_url, model, key, wav, language)?;
             let response = transport.send(&request)?;
             let value = parse_json(&response, &secrets_from_headers(&request.headers))?;
             Ok(SpeechOutcome::Text(google_text(&value).ok_or_else(|| missing_text(&response))?))
         }
-        "assemblyai" => transcribe_assembly(transport, base_url, model, key, wav),
+        "assemblyai" => transcribe_assembly(transport, base_url, model, key, wav, language),
         other => Err(EngineError::new(
             "not_ready",
             format!("{other} is not ready in this build yet."),
@@ -511,6 +512,7 @@ fn transcribe_assembly(
     model: &str,
     key: &str,
     wav: &[u8],
+    language: &str,
 ) -> Result<SpeechOutcome, EngineError> {
     let upload = build_assembly_upload(base_url, key, wav)?;
     let upload_response = transport.send(&upload)?;
@@ -524,7 +526,7 @@ fn transcribe_assembly(
                 "AssemblyAI upload did not return an upload URL.",
             )
         })?;
-    let submit = build_assembly_transcript(base_url, key, model, audio_url)?;
+    let submit = build_assembly_transcript(base_url, key, model, audio_url, language)?;
     let submit_response = transport.send(&submit)?;
     let submit_json = parse_json(&submit_response, &secrets_from_headers(&submit.headers))?;
     assembly_outcome(&submit_json)
@@ -575,7 +577,7 @@ pub fn build_openai_chat(
     if base_url.to_ascii_lowercase().contains("openrouter.ai") {
         headers.push((
             "HTTP-Referer".to_string(),
-            "https://crunchcall.local".to_string(),
+            "https://annotated.click".to_string(),
         ));
     }
     Ok(PreparedRequest {
@@ -594,10 +596,15 @@ pub fn build_openai_audio(
     model: &str,
     key: &str,
     wav: &[u8],
+    language: &str,
 ) -> Result<PreparedRequest, EngineError> {
     let key = require_key(key)?;
+    let mut fields = vec![("model", model)];
+    if language_code(language) == "en" {
+        fields.push(("language", "en"));
+    }
     let (content_type, bytes) = multipart(
-        &[("model", model)],
+        &fields,
         "file",
         "audio.wav",
         "audio/wav",
@@ -668,13 +675,19 @@ pub fn build_google_speech(
     model: &str,
     key: &str,
     wav: &[u8],
+    language: &str,
 ) -> Result<PreparedRequest, EngineError> {
     let key = require_key(key)?;
+    let prompt = if language_code(language) == "en" {
+        "Transcribe this audio verbatim in English."
+    } else {
+        "Transcribe this audio verbatim."
+    };
     let body = json!({
         "contents": [{
             "role": "user",
             "parts": [
-                { "text": "Transcribe this audio verbatim." },
+                { "text": prompt },
                 {
                     "inlineData": {
                         "mimeType": "audio/wav",
@@ -721,6 +734,7 @@ pub fn build_deepgram(
     model: &str,
     key: &str,
     wav: &[u8],
+    language: &str,
 ) -> Result<PreparedRequest, EngineError> {
     let key = require_key(key)?;
     let base = if base_url.trim().is_empty() {
@@ -728,12 +742,14 @@ pub fn build_deepgram(
     } else {
         base_url.trim().trim_end_matches('/')
     };
-    let url = if model.is_empty() {
+    let mut url = if model.is_empty() {
         base.to_string()
     } else {
-        let sep = if base.contains('?') { '&' } else { '?' };
-        format!("{base}{sep}model={}", query_encode(model))
+        append_query(base, "model", model)
     };
+    if language_code(language) == "en" {
+        url = append_query(&url, "language", "en");
+    }
     Ok(PreparedRequest {
         method: "POST".into(),
         url,
@@ -767,17 +783,22 @@ pub fn build_assembly_transcript(
     key: &str,
     model: &str,
     audio_url: &str,
+    language: &str,
 ) -> Result<PreparedRequest, EngineError> {
     let key = require_key(key)?;
     let speech_model = if model.is_empty() { "universal" } else { model };
+    let mut body = json!({
+        "audio_url": audio_url,
+        "speech_models": [speech_model],
+    });
+    if language_code(language) == "en" {
+        body["language_code"] = json!("en");
+    }
     Ok(PreparedRequest {
         method: "POST".into(),
         url: join_url(assembly_base(base_url), "transcript"),
         headers: vec![("Authorization".to_string(), key.to_string())],
-        body: RequestBody::Json(json!({
-            "audio_url": audio_url,
-            "speech_models": [speech_model],
-        })),
+        body: RequestBody::Json(body),
     })
 }
 
@@ -786,6 +807,7 @@ pub fn build_elevenlabs(
     model: &str,
     key: &str,
     wav: &[u8],
+    language: &str,
 ) -> Result<PreparedRequest, EngineError> {
     let key = require_key(key)?;
     let url = if base_url.trim().is_empty() {
@@ -793,8 +815,12 @@ pub fn build_elevenlabs(
     } else {
         base_url.trim().trim_end_matches('/').to_string()
     };
+    let mut fields = vec![("model_id", model)];
+    if language_code(language) == "en" {
+        fields.push(("language_code", "en"));
+    }
     let (content_type, bytes) = multipart(
-        &[("model_id", model)],
+        &fields,
         "file",
         "audio.wav",
         "audio/wav",
@@ -855,6 +881,18 @@ fn assembly_base(base: &str) -> &str {
     } else {
         base.trim().trim_end_matches('/')
     }
+}
+
+fn language_code(language: &str) -> &'static str {
+    match language.trim().to_ascii_lowercase().as_str() {
+        "en" | "english" => "en",
+        _ => "",
+    }
+}
+
+fn append_query(url: &str, key: &str, value: &str) -> String {
+    let sep = if url.contains('?') { '&' } else { '?' };
+    format!("{url}{sep}{key}={}", query_encode(value))
 }
 
 fn query_encode(value: &str) -> String {
@@ -1090,8 +1128,27 @@ mod tests {
         )
         .unwrap();
         assert!(request.headers.iter().any(|(name, value)| {
-            name == "HTTP-Referer" && value == "https://crunchcall.local"
+            name == "HTTP-Referer" && value == "https://annotated.click"
         }));
+    }
+
+    #[test]
+    fn english_language_is_sent_and_auto_is_not() {
+        let deepgram = build_deepgram("https://api.deepgram.com/v1/listen", "nova-3", "dg-key", b"wav", "english").unwrap();
+        assert!(deepgram.url.contains("model=nova-3"));
+        assert!(deepgram.url.contains("language=en"));
+        let auto = build_deepgram("https://api.deepgram.com/v1/listen", "nova-3", "dg-key", b"wav", "auto").unwrap();
+        assert!(!auto.url.contains("language="));
+
+        let openai = build_openai_audio("https://api.openai.com/v1", "whisper-1", "sk-test", b"wav", "en").unwrap();
+        match openai.body {
+            RequestBody::Bytes { bytes, .. } => {
+                let body = String::from_utf8_lossy(&bytes);
+                assert!(body.contains("name=\"language\""));
+                assert!(body.contains("en"));
+            }
+            other => panic!("expected bytes, got {other:?}"),
+        }
     }
 
     #[test]

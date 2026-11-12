@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { callEngine, engineAvailable } from '../features/engines/call'
 import { engineById, engineDefaults, engineModules } from '../features/engines/catalog'
 import { useTheme, type ThemePreference } from './theme'
-import { ListenIcon, MeetingsIcon, MicIcon, PcIcon } from './icons'
+import { KeyIcon, ListenIcon, MeetingsIcon, MicIcon, PcIcon } from './icons'
 
-export type SettingsSection = 'listening' | 'speech' | 'notes' | 'machine'
+export type SettingsSection = 'listening' | 'speech' | 'notes' | 'machine' | 'license'
 
 export const settingsItems: { id: SettingsSection; label: string; hint: string; icon: typeof ListenIcon; find: string }[] = [
   {
@@ -33,7 +33,14 @@ export const settingsItems: { id: SettingsSection; label: string; hint: string; 
     label: 'This PC',
     hint: 'Name, theme, startup',
     icon: PcIcon,
-    find: 'pc path folder version login local models windows startup appearance theme light dark system onboarding setup name restore defaults reset update updates github latest check release',
+    find: 'pc path folder version login local models windows startup appearance theme light dark system onboarding setup name restore defaults reset',
+  },
+  {
+    id: 'license',
+    label: 'License',
+    hint: 'Unlock and installer',
+    icon: KeyIcon,
+    find: 'license unlock buy purchase payment coaching export markdown signature authentic signed installer download',
   },
 ]
 
@@ -55,27 +62,20 @@ export const supportItems: {
     id: 'support',
     label: 'Get support',
     find: 'support help contact email feedback bug',
-    href: 'mailto:hello@crunchcall.app?subject=CrunchCall%20support',
+    href: 'mailto:hello@annotated.click?subject=annotated%20support',
   },
   {
     id: 'help',
     label: 'Help center',
     find: 'help center docs documentation guide faq',
     external: true,
-    href: 'https://github.com/search?q=crunchcall&type=repositories',
+    href: 'https://annotated.click',
   },
 ]
 
-export type InputDevice = 'default' | 'array' | 'headset' | 'external'
+export type InputDevice = string
 export type CueId = 'talk' | 'stacked' | 'date' | 'next' | 'interrupt'
 export type SpeechLanguage = 'auto' | 'english'
-
-export const inputDevices: { id: InputDevice; name: string }[] = [
-  { id: 'default', name: 'Default' },
-  { id: 'array', name: 'Microphone array' },
-  { id: 'headset', name: 'Headset microphone' },
-  { id: 'external', name: 'External microphone' },
-]
 
 export const cueOptions: { id: CueId; name: string; help: string }[] = [
   { id: 'talk', name: 'Talk ratio', help: 'When one person is carrying the call.' },
@@ -106,6 +106,13 @@ function readStringMap(value: unknown): Record<string, string> {
     if (typeof item === 'string') out[key] = item
   }
   return out
+}
+
+function savedInput(value: unknown): string {
+  if (typeof value !== 'string') return 'default'
+  const trimmed = value.trim()
+  if (!trimmed || trimmed === 'array' || trimmed === 'headset' || trimmed === 'external') return 'default'
+  return trimmed
 }
 
 function defaultCues(): Record<CueId, boolean> {
@@ -150,10 +157,7 @@ function loadSettings(): StoredSettings {
       coachId: typeof parsed.coachId === 'string' ? parsed.coachId : fallback.coachId,
       language: parsed.language === 'english' ? 'english' : 'auto',
       modelOverrides: readStringMap(parsed.modelOverrides),
-      input:
-        parsed.input === 'array' || parsed.input === 'headset' || parsed.input === 'external'
-          ? parsed.input
-          : 'default',
+      input: savedInput(parsed.input),
       cues: readCues(parsed.cues),
       showCues: typeof parsed.showCues === 'boolean' ? parsed.showCues : true,
       launchAtLogin: typeof parsed.launchAtLogin === 'boolean' ? parsed.launchAtLogin : false,
@@ -221,6 +225,29 @@ export function useSettingsState() {
       cancelled = true
     }
   }, [])
+
+  const loginReady = useRef(false)
+  useEffect(() => {
+    const api = window.crunchcall
+    if (!api?.openAtLogin) {
+      loginReady.current = true
+      return
+    }
+    let cancel = false
+    void api.openAtLogin().then((on) => {
+      if (cancel) return
+      if (typeof on === 'boolean') setLaunchAtLogin(on)
+      loginReady.current = true
+    })
+    return () => {
+      cancel = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!loginReady.current) return
+    void window.crunchcall?.setOpenAtLogin?.(launchAtLogin)
+  }, [launchAtLogin])
 
   useEffect(() => {
     if (!engineAvailable()) return

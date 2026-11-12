@@ -1,4 +1,4 @@
-# CrunchCall engine contract
+# annotated engine contract
 
 The renderer, Electron main, and `crunchcalld` share this contract. Do not invent a second protocol.
 
@@ -72,7 +72,7 @@ A direct download writes `models/<module id>/<filename>.partial` and renames it 
 ## Cloud clients that must really call
 
 - `openai-audio`: multipart `POST {baseUrl}/audio/transcriptions` fields `file`, `model`. Bearer key.
-- `openai-chat`: `POST {baseUrl}/chat/completions`. Bearer key. OpenRouter also sends `HTTP-Referer: https://crunchcall.local`.
+- `openai-chat`: `POST {baseUrl}/chat/completions`. Bearer key. OpenRouter also sends `HTTP-Referer: https://annotated.click`.
 - `anthropic`: `POST https://api.anthropic.com/v1/messages` with `x-api-key` and `anthropic-version: 2023-06-01`.
 - `google`: Gemini `generateContent`. Speech sends inline audio plus "Transcribe this audio verbatim." Writer sends the prompt.
 - `cohere`: `POST https://api.cohere.com/v2/chat` with `Authorization: Bearer`.

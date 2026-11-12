@@ -1,93 +1,45 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { appVersion, loadLatest, releasesPage, type UpdateResult } from './updates'
+import { useCallback, useEffect, useState } from 'react'
+import type { UpdateStatus } from '../desktop'
 
-const dismissKey = 'crunchcall.update.dismissed'
+const idle: UpdateStatus = { phase: 'idle', version: '', percent: 0 }
 
-export type UpdateController = UpdateResult & {
-  check: () => void
-  open: () => void
-  dismiss: () => void
-  showPrompt: boolean
+function readStatus(value: unknown): UpdateStatus {
+  if (!value || typeof value !== 'object') return idle
+  const status = value as Partial<UpdateStatus>
+  const phase = status.phase
+  if (
+    phase !== 'idle' &&
+    phase !== 'checking' &&
+    phase !== 'current' &&
+    phase !== 'available' &&
+    phase !== 'downloading' &&
+    phase !== 'downloaded'
+  ) {
+    return idle
+  }
+  return {
+    phase,
+    version: typeof status.version === 'string' ? status.version : '',
+    percent: typeof status.percent === 'number' ? status.percent : 0,
+  }
 }
 
-export function useUpdates(): UpdateController {
-  const [result, setResult] = useState<UpdateResult>({ phase: 'checking', current: appVersion })
-  const [dismissed, setDismissed] = useState(readDismissed)
-  const ticket = useRef(0)
-
-  const check = useCallback(() => {
-    const id = ticket.current + 1
-    ticket.current = id
-    setResult((current) => ({ phase: 'checking', current: current.current || appVersion }))
-    loadLatest(appVersion)
-      .then((next) => {
-        if (ticket.current !== id) return
-        setResult(next)
-      })
-      .catch(() => {
-        if (ticket.current !== id) return
-        setResult({ phase: 'error', current: appVersion, message: "Couldn't reach GitHub." })
-      })
-  }, [])
+export function useUpdates() {
+  const [status, setStatus] = useState<UpdateStatus>(idle)
 
   useEffect(() => {
-    const id = ticket.current + 1
-    ticket.current = id
-    let cancelled = false
-    loadLatest(appVersion)
-      .then((next) => {
-        if (cancelled || ticket.current !== id) return
-        setResult(next)
-      })
-      .catch(() => {
-        if (cancelled || ticket.current !== id) return
-        setResult({ phase: 'error', current: appVersion, message: "Couldn't reach GitHub." })
-      })
-    return () => {
-      cancelled = true
-    }
+    const api = window.crunchcall
+    if (!api?.onUpdate) return
+    const stop = api.onUpdate((next) => setStatus(readStatus(next)))
+    void api.updateStatus?.().then((next) => setStatus(readStatus(next)))
+    return stop
   }, [])
 
-  const dismiss = useCallback(() => {
-    if (result.phase !== 'available') return
-    try {
-      localStorage.setItem(dismissKey, result.latest)
-    } catch {
-      /* private mode keeps the prompt until the page closes */
-    }
-    setDismissed(result.latest)
-  }, [result])
+  const install = useCallback(() => {
+    void window.crunchcall?.installUpdate?.()
+  }, [])
 
-  const open = useCallback(() => {
-    openRelease(result.phase === 'available' ? result.url : releasesPage)
-  }, [result])
+  const ready = status.phase === 'available' || status.phase === 'downloading' || status.phase === 'downloaded'
 
-  const showPrompt = result.phase === 'available' && dismissed !== result.latest
-
-  return { ...result, check, open, dismiss, showPrompt }
-}
-
-export function openRelease(url: string) {
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  } catch {
-    return
-  }
-  if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com') return
-  if (!parsed.pathname.startsWith('/keithsimkin/crunchcall')) return
-  const href = parsed.toString()
-  if (window.crunchcall?.openExternal) {
-    void window.crunchcall.openExternal(href)
-    return
-  }
-  window.open(href, '_blank', 'noopener,noreferrer')
-}
-
-function readDismissed(): string {
-  try {
-    return localStorage.getItem(dismissKey) ?? ''
-  } catch {
-    return ''
-  }
+  return { ...status, install, ready }
 }

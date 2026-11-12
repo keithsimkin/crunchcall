@@ -36,7 +36,7 @@ export function StartAsk({
       <div>
         <p className="start-kicker">{duePhrase(event.start, now)}</p>
         <strong>{event.title}</strong>
-        <p>{event.detail ? `${event.detail}. ` : ''}Turn CrunchCall on for this meeting?</p>
+        <p>{event.detail ? `${event.detail}. ` : ''}Turn annotated on for this meeting?</p>
       </div>
       <div className="head-actions">
         <button type="button" className="btn ghost" onClick={onDismiss}>
@@ -218,7 +218,7 @@ export function MeetingsScreen({
       </div>
 
       {groups.length === 0 ? (
-        <p className="empty">No meetings match that.</p>
+        <p className="empty">{query ? 'No meetings match that.' : 'No meetings yet. Start one and the notes stay on this PC.'}</p>
       ) : (
         groups.map((group) => (
           <section key={group.day} className="day-block">

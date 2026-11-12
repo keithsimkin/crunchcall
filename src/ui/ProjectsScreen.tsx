@@ -303,64 +303,95 @@ export function ProjectsScreen({
   if (active) {
     const meetings = meetingsFor(active)
     const listed = trimmed ? meetings.filter((meeting) => resultById.has(meeting.id)) : meetings
+    const folderPeople = [...new Set(meetings.flatMap((meeting) => meeting.people))]
+    const folderTopics = [...new Set(meetings.flatMap((meeting) => meeting.topics))]
     return (
       <section className="projects-page" aria-labelledby="folder-title">
-        <button type="button" className="crumb" onClick={() => setOpenId(null)}>
-          ← All folders
-        </button>
-
-        <div className={`folder-view-head accent-${active.accent}`}>
-          <span className="folder-view-icon" aria-hidden="true">
-            <FolderIcon />
-          </span>
-          <div className="folder-view-copy">
-            <h1 id="folder-title" className="page-title">
-              {active.name}
-            </h1>
-            <p className="lede">{active.blurb}</p>
-            <div className="folder-view-people">
-              {peopleFor(meetings).map((person) => (
-                <button key={person} type="button" className="mini-person person-jump" onClick={() => pick(person)}>
-                  <Avatar name={person} />
-                  {person}
-                </button>
-              ))}
+        <div className="page-head projects-head">
+          <div className="projects-title-block">
+            <button type="button" className="crumb" onClick={() => setOpenId(null)}>
+              ← All folders
+            </button>
+            <div className={`folder-title-row accent-${active.accent}`}>
+              <span className="folder-title-mark" aria-hidden="true">
+                <FolderIcon />
+              </span>
+              <h1 id="folder-title" className="page-title">
+                {active.name}
+              </h1>
             </div>
           </div>
-          <div className="folder-view-stats">
-            <strong>{listed.length}</strong>
-            <span>{listed.length === 1 ? 'note' : 'notes'}</span>
-          </div>
+          <div className="projects-bar">{search}</div>
         </div>
 
-        {search}
+        <div className="desk">
+          <div className="desk-caption">
+            <p>
+              <strong>
+                {listed.length} {listed.length === 1 ? 'note' : 'notes'}
+                {trimmed ? ' match' : ''}
+              </strong>
+            </p>
+            <p className="muted">{trimmed ? `In ${active.name}.` : active.blurb}</p>
+          </div>
 
-        {meetings.length === 0 ? (
-          <div className="state-card folder-empty-state">
-            <h2>This folder is empty</h2>
-            <p>Open a note and file it into this folder. The folder is already waiting on the desk.</p>
-            <button type="button" className="btn primary" onClick={onNewMeeting}>
-              Start a meeting
-            </button>
-          </div>
-        ) : listed.length === 0 ? (
-          <div className="state-card folder-empty-state">
-            <h2>Nothing in this folder matches</h2>
-            <p>Try another person, topic, or next step. Clear the search to see every note in {active.name}.</p>
-          </div>
-        ) : (
-          <div className="folder-notes">
-            {listed.map((meeting) => (
-              <NoteCard
-                key={meeting.id}
-                meeting={meeting}
-                hit={resultById.get(meeting.id)?.hits[0]}
-                query={trimmed}
-                onOpen={onOpen}
-              />
-            ))}
-          </div>
-        )}
+          {!trimmed && (folderPeople.length > 0 || folderTopics.length > 0) ? (
+            <div className="desk-picks">
+              {folderPeople.length > 0 ? (
+                <div className="desk-pick-row">
+                  <span className="desk-pick-label">People</span>
+                  <div className="desk-pick-scroll">
+                    {folderPeople.map((person) => (
+                      <button key={person} type="button" className="desk-person" onClick={() => pick(person)}>
+                        <Avatar name={person} />
+                        {person}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {folderTopics.length > 0 ? (
+                <div className="desk-pick-row">
+                  <span className="desk-pick-label">Topics</span>
+                  <div className="desk-pick-scroll">
+                    {folderTopics.map((topic) => (
+                      <button key={topic} type="button" className="desk-topic" onClick={() => pick(topic)}>
+                        {topic}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {meetings.length === 0 ? (
+            <div className="state-card folder-empty-state">
+              <h2>This folder is empty</h2>
+              <p>Open a note and file it into this folder. The folder is already waiting on the desk.</p>
+              <button type="button" className="btn primary" onClick={onNewMeeting}>
+                Start a meeting
+              </button>
+            </div>
+          ) : listed.length === 0 ? (
+            <div className="state-card folder-empty-state">
+              <h2>Nothing in this folder matches</h2>
+              <p>Try another person, topic, or next step. Clear the search to see every note in {active.name}.</p>
+            </div>
+          ) : (
+            <div className="folder-notes">
+              {listed.map((meeting) => (
+                <NoteCard
+                  key={meeting.id}
+                  meeting={meeting}
+                  hit={resultById.get(meeting.id)?.hits[0]}
+                  query={trimmed}
+                  onOpen={onOpen}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </section>
     )
   }

@@ -1,8 +1,8 @@
-# CrunchCall build plan
+# annotated build plan
 
 **Status:** canonical. Supersedes `docs/PRODUCT.md` and `docs/ARCHITECTURE.md`.
 
-Windows-first, local-first AI meeting notepad. MeetMouse-class privacy and live coaching; a few Granola-easy extras (especially MCP). No meeting bot. Sell on the Microsoft Store.
+Windows-first, local-first AI meeting notepad. MeetMouse-class privacy and live coaching; a few Granola-easy extras (especially MCP). No meeting bot. A signed installer from annotated.click, and a $35 one-time unlock. Not the Microsoft Store.
 
 ---
 
@@ -10,18 +10,18 @@ Windows-first, local-first AI meeting notepad. MeetMouse-class privacy and live 
 
 ### Positioning
 
-**CrunchCall** — snack-bar energy for meetings: crunch the call; leave notes, owners, and next steps. Private by default, optional BYOK when you want a bigger model. Captures system/meeting audio on the machine, transcribes and summarizes on-device, nudges during the call. No meeting bot.
+**annotated** lives at [annotated.click](https://annotated.click). Leave the call with notes, owners, and next steps. Private by default, optional BYOK when you want a bigger model. Captures system/meeting audio on the machine, transcribes and summarizes on-device, nudges during the call. No meeting bot.
 
 ### In scope (v1 product)
 
-- Windows desktop app (primary), distributed via Microsoft Store (and optional sideload EXE/MSI).
+- Windows desktop app (primary), distributed as a signed NSIS installer from annotated.click. Not the Microsoft Store.
 - System / meeting audio capture without joining Zoom, Meet, Teams, or other calls as a bot.
 - Speech-to-text chosen by the user: a local module downloaded from the app, a cloud speech API, or an external dictation app (Willow Voice and the rest). The default is on-device.
 - Local LLM summaries, takeaways, and action items, or a cloud lab for text. Cloud notes see the transcript, not the audio, unless speech is also a cloud engine.
-- In-app Dictate. Hold to talk inside CrunchCall with the same speech engine used on the call. External apps hand off text; they keep the microphone.
+- In-app Dictate. Hold to talk inside annotated with the same speech engine used on the call. External apps hand off text; they keep the microphone.
 - Per-meeting notes, searchable history, and ask-the-meeting chat with transcript timestamp citations.
 - Live coaching overlay mid-call (talk ratio, stacked questions, missing dates/next steps, interruptions), screen-share safe.
-- No account required for core local mode; clear one-time / paid-unlock monetization via Store.
+- No account required for core local mode. Coaching and Markdown export are a $35 one-time payment, checked on this PC.
 - Local MCP server so other AI tools can read curated notes and search meetings.
 - MVP share: copy / export Markdown. Encrypted expiring links deferred (needs hosting).
 
@@ -37,6 +37,7 @@ Windows-first, local-first AI meeting notepad. MeetMouse-class privacy and live 
 - Literal “REST API product shell” as the app (optional localhost HTTP only if tooling needs it later).
 - Always-on cloud share backend or hosted encrypted links in MVP.
 - Tauri (rejected after prior build friction; Electron is the shell).
+- Microsoft Store, Partner Center, MSIX Store packages, and Microsoft checkout.
 
 ### Behavior specs from disposable TS stubs
 
@@ -61,11 +62,11 @@ User ask for a “REST app” for speed + native Windows means **desktop-native 
 
 **Locked choice (revised):** **Electron + thin renderer + Rust native module/sidecar for the hot path.**
 
-Electron is the more mature, better-documented Windows desktop shell (windowing, overlay, Store/NSIS packaging, Credential Manager from main). Tauri was preferred earlier for binary size; it is **out** after repeated local build friction. Speed still comes from Rust (or C++) for WASAPI / Whisper / llama.cpp — not from doing inference in the renderer.
+Electron is the more mature, better-documented Windows desktop shell (windowing, overlay, NSIS packaging, Credential Manager from main). Tauri was preferred earlier for binary size; it is **out** after repeated local build friction. Speed still comes from Rust (or C++) for WASAPI / Whisper / llama.cpp — not from doing inference in the renderer.
 
 | Role | Owns |
 | --- | --- |
-| Electron main | App lifecycle, main + overlay `BrowserWindow`s, `setContentProtection`, Store/installer packaging, DPAPI/Credential Manager, IPC hub |
+| Electron main | App lifecycle, main + overlay `BrowserWindow`s, `setContentProtection`, installer packaging, DPAPI/Credential Manager, IPC hub |
 | Thin renderer | Meetings, notes, settings, ask-chat, overlay cue UI — command/query via preload IPC; not a growing SPA feature tree |
 | Rust native / sidecar | WASAPI capture, Whisper STT, local LLM, SQLite+FTS5 (preferred next to the audio pipeline), coaching engine, MCP stdio server |
 | Not chosen | Tauri; shipping/evolving the current Vite SPA as-is; pure egui/iced; “React SPA + local REST” as the product |
@@ -116,7 +117,7 @@ The catalog is `native/catalog/providers.json`. One speech module serves the liv
 
 - **On this PC (default):** Whisper via whisper.cpp (Tiny, Base, Small, Large v3 Turbo) and sherpa-onnx modules (Moonshine, Parakeet TDT v3, SenseVoice, Zipformer streaming, Nemotron streaming). Files download into `%LocalAppData%\CrunchCall\models`. Audio stays on the machine. The first build stores and downloads them; linking whisper.cpp and sherpa-onnx is the next native step, and the app says so instead of inventing a transcript.
 - **Cloud, opt-in:** OpenAI, Groq, Deepgram, AssemblyAI, ElevenLabs Scribe, Mistral Voxtral, Fireworks, and Gemini audio. Azure, Gladia, Speechmatics, Rev, and Soniox are listed until their clients land. Picking one sends audio to that lab. The settings line says so.
-- **Another app:** Willow Voice, Wispr Flow, Superwhisper, Aqua Voice, Handy, Wspr, Windows voice typing, Windows Voice Access. CrunchCall does not call their private APIs. The user dictates there and pastes the text into Dictate. CrunchCall stores the text and can still write the notes.
+- **Another app:** Willow Voice, Wispr Flow, Superwhisper, Aqua Voice, Handy, Wspr, Windows voice typing, Windows Voice Access. annotated does not call their private APIs. The user dictates there and pastes the text into Dictate. annotated stores the text and can still write the notes.
 
 ### Notes and coaching
 
@@ -155,19 +156,19 @@ The catalog is `native/catalog/providers.json`. One speech module serves the liv
 ### Share
 
 - **MVP:** copy Markdown / export `.md` of curated notes (not full transcript/coaching dump by default).
-- **Deferred:** encrypted expiring links (needs minimal hosting + Store privacy disclosure) — Phase 5+.
+- **Deferred:** encrypted expiring links (needs minimal hosting) — Phase 5+.
 
 ### Monetization
 
-- Microsoft Store **one-time purchase** and/or durable **paid unlock**.
-- Core local mode works offline with **no login**.
-- Optional free trial via Store licensing if desired later; not required for architecture.
+- **$35 one-time payment** at [annotated.click/buy](https://annotated.click/buy). No subscription and no Microsoft checkout.
+- The desktop app stores the license on this PC and checks it offline.
+- Core local mode works offline with **no login**. Coaching and Markdown export are the unlock.
 
 ---
 
 ## 3. Feature matrix
 
-Priority: **P0** MVP / Store baseline · **P1** near-term differentiators · **P2** polish.  
+Priority: **P0** MVP / ship baseline · **P1** near-term differentiators · **P2** polish.  
 Effort: **S** small · **M** medium · **L** large.
 
 ### MeetMouse parity
@@ -180,7 +181,7 @@ Effort: **S** small · **M** medium · **L** large.
 | Local summaries, takeaways, next steps + owners | P0 | M | Small local instruct model, default Qwen2.5 1.5B |
 | Cloud notes labs (text) and cloud speech (audio, separate opt-in) | P0 | M | Credential Manager. Many labs, editable model id |
 | Per-meeting notes + ask-the-meeting with timestamp citations | P0 | M | SQLite + chat over transcript |
-| No account for core; clear Store one-time / unlock | P0 | S | Partner Center licensing |
+| No account for core; $35 one-time unlock | P0 | S | License checked on this PC |
 | Live coaching overlay (cue set + share-safe) | P1 | M | After capture+STT solid |
 | Curated share (export first; links later) | P2 | S–M | Markdown MVP; links deferred |
 | Process-targeted loopback | P2 | L | Fallback for hard call apps |
@@ -196,32 +197,26 @@ Effort: **S** small · **M** medium · **L** large.
 
 ---
 
-## 4. Microsoft Store packaging & distribution
+## 4. Installer and distribution
 
-### Preferred path: MSIX
+The app is not on the Microsoft Store. There is no Partner Center listing, no MSIX Store package, and no Microsoft checkout.
 
-- Partner Center product listing.
-- Prefer **MSIX** via staging + `MakeAppx` / `winapp pack` so **Microsoft re-signs** the Store package (no purchased Authenticode certificate required for Store distribution).
-- Declare capabilities and privacy: microphone, loopback / system audio capture, local processing, optional network for BYOK and model download, MCP as local stdio (not a cloud service).
+### Installer
 
-### Alternate path: EXE / MSI
+- **electron-builder** NSIS, one-click, per user (`electron-builder.yml`).
+- Chromium ships with Electron. No WebView2 bootstrapper.
+- Authenticode-sign the installer. `electron-updater` rejects an update whose publisher does not match this build.
+- People download it from annotated.click. GitHub is the update feed.
 
-- **electron-builder** (or equivalent) NSIS / MSI as a Store **EXE/MSI** product where needed.
-- Chromium is bundled with Electron — no separate WebView2 Evergreen requirement.
-- Silent install: `/S` or `msiexec /quiet`.
-- Self-hosted signed installer URL for sideload / enterprise; Authenticode matters more here than for MSIX Store.
-- Expect a larger installer than Tauri; offset with first-run model download and aggressive asar/native binary layout.
+### Package size and models
 
-### Package size & models
+- Ship a small default model, or download it on first run into `%LocalAppData%\CrunchCall\models`.
+- Say the download size, and what still works offline, in the first-run UI.
 
-- Electron baseline is heavier; keep Store package workable by shipping a tiny default model **or** first-run download into `%LocalAppData%\CrunchCall\models`.
-- Disclose download size and offline capability in listing / first-run UI.
-- Run WACK / certification with real capture and always-on-top overlay scenarios.
+### Monetization
 
-### Monetization on Store
-
-- One-time price and/or durable add-on unlock.
-- License check only for paid tiers; local core must not require CrunchCall cloud accounts.
+- **$35 once**, paid at annotated.click/buy. No subscription.
+- License check only for the paid unlock. Local notes do not need an annotated account.
 
 ---
 
@@ -237,12 +232,11 @@ Effort: **S** small · **M** medium · **L** large.
 - Meeting list, live session, post-call notes view.
 - Offline-capable happy path.
 
-### Phase 2 — Store
+### Phase 2 — Installer
 
-- MSIX (preferred) and/or EXE/MSI packaging.
-- Privacy strings, capability declarations, model download UX.
-- Paid unlock / one-time purchase wiring.
-- Certification pass on audio + basic UI.
+- Signed NSIS installer and the update feed.
+- Privacy copy and model download UX.
+- $35 unlock wired to the on-PC license check.
 
 ### Phase 3 — Coaching
 
@@ -272,11 +266,11 @@ Effort: **S** small · **M** medium · **L** large.
 | Loopback quality, device switches, exclusive-mode apps | Missed audio / bad transcripts | Clear device UX; mic mix; later process loopback |
 | Overlay affinity resets; black rectangle in some shares | Coaching leaks or ugly share | Re-apply protection; QA matrix; fail closed (hide overlay) |
 | Dual Whisper + local LLM RAM/disk on low-end PCs | Crashes / slow machines | Small models; sequential inference options; documented minimums |
-| Store policy on background capture, AI, network | Certification delay | Honest privacy copy; BYOK/network only when opted in |
+| Background capture, AI, and network surprise people | Trust and support load | Honest privacy copy; BYOK and network only when opted in |
 | Share-links need a backend | Scope creep vs local-core promise | Export-only until hosting is intentional |
 | MCP surface + BYOK keys | Secret leakage | No secrets over MCP; DPAPI only |
-| Model download / license compliance | Legal / Store rejection | Prefer redistributable or user-download models; document licenses |
-| Electron installer / RAM weight vs Tauri | Larger Store package; heavier idle footprint | First-run models; sequential inference; trim unused Chromium features where safe |
+| Model download / license compliance | Legal problem | Prefer redistributable or user-download models; document licenses |
+| Electron installer / RAM weight vs Tauri | Larger installer; heavier idle footprint | First-run models; sequential inference; trim unused Chromium features where safe |
 | Thin UI scope creep into a fat renderer SPA | Wrong architecture | Keep main+preload IPC-first; Rust owns hot path |
 
 ---
@@ -303,7 +297,7 @@ Treat the current Vite/React app as **disposable**. Implementation work starts b
 - Electron app layout: `electron/` (main + preload), thin `renderer/` (or equivalent), `native/` or `crates/` Rust workspace (audio, stt, llm, db, coach, mcp).
 - IPC contracts from renderer → main → Rust; overlay as a second `BrowserWindow`.
 - This file (`docs/PLAN.md`) as the architecture and roadmap canon.
-- electron-builder / MSIX packaging configs when Phase 2 starts.
+- electron-builder NSIS config when Phase 2 starts. The Microsoft Store is not a packaging target.
 
 ---
 
@@ -318,5 +312,5 @@ Treat the current Vite/React app as **disposable**. Implementation work starts b
 7. **Storage:** SQLite + FTS5.
 8. **MCP:** Local stdio MCP for notes/search/read.
 9. **Share:** MVP copy/export Markdown; encrypted expiring links deferred.
-10. **Store:** Prefer MSIX (Microsoft re-signs); alternate EXE/MSI via electron-builder with silent install (Chromium bundled; no WebView2 bootstrapper).
-11. **Monetization:** Store one-time / paid unlock; no account for core local mode.
+10. **Distribution:** Signed NSIS installer from annotated.click. Not the Microsoft Store, not MSIX, not Microsoft checkout.
+11. **Monetization:** $35 one-time unlock at annotated.click/buy, checked on this PC. No account for core local mode.

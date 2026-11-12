@@ -1,7 +1,9 @@
 import type { CalendarEvent } from '../calendar/ics'
 import { readDictations } from '../dictate/history'
 import { projectForMeeting, searchMeetings } from '../../ui/search'
-import { richNotes, type MeetingRow, type ProjectFolder } from '../../ui/fixtures'
+import { notesFor } from '../desk/notesIndex'
+import type { MeetingRow, ProjectFolder } from '../../ui/fixtures'
+import { emptyAskTags, meetingsForTags, skillById, type AskSkill, type AskTags } from './mentions'
 
 export type AskFocus =
   | { page: 'list' }
@@ -20,9 +22,10 @@ export type AskPack = {
 }
 
 const SYSTEM = [
-  'You are CrunchCall’s in-app assistant.',
+  'You are annotated’s in-app assistant.',
   'Answer only from the CONTEXT the user already has in the app (meetings, notes, actions, projects, calendar, dictations).',
-  'Prefer the FOCUS section when it answers the question; use RELATED and CORPUS only when needed.',
+  'When SKILL, TAGGED MEETINGS, TAGGED PROJECTS, or TAGGED PEOPLE is present, answer from that scope first and follow the skill.',
+  'Otherwise prefer the FOCUS section; use RELATED and CORPUS only when needed.',
   'Be concise. Name the meeting or project when you cite a fact.',
   'If the context does not contain the answer, say you do not see it in their notes.',
   'Do not invent owners, dates, or quotes.',
@@ -36,7 +39,7 @@ function clip(text: string, max: number): string {
 
 function formatMeetingBrief(meeting: MeetingRow, folders: ProjectFolder[]): string {
   const project = projectForMeeting(folders, meeting.id)
-  const notes = richNotes[meeting.id]
+  const notes = notesFor(meeting.id)
   const lines = [
     `Meeting: ${meeting.title} (${meeting.status}, ${meeting.when}, ${meeting.duration})`,
     `People: ${meeting.people.join(', ') || '—'}`,
@@ -60,7 +63,7 @@ function formatMeetingBrief(meeting: MeetingRow, folders: ProjectFolder[]): stri
 
 function formatMeetingDeep(meeting: MeetingRow, folders: ProjectFolder[]): string {
   const brief = formatMeetingBrief(meeting, folders)
-  const notes = richNotes[meeting.id]
+  const notes = notesFor(meeting.id)
   if (!notes) return brief
   const transcript = notes.utterances
     .slice(0, 40)
@@ -166,51 +169,147 @@ function corpusBlock(rows: MeetingRow[], folders: ProjectFolder[], skipId?: stri
     .join('\n\n')
 }
 
+function scopeBlocks(
+  tags: AskTags,
+  rows: MeetingRow[],
+  folders: ProjectFolder[],
+): { label: string; sections: string[] } {
+  const sections: string[] = []
+  const labels: string[] = []
+  const explicit = tags.meetingIds
+    .map((id) => rows.find((row) => row.id === id))
+    .filter((row): row is MeetingRow => Boolean(row))
+  const explicitIds = new Set(explicit.map((meeting) => meeting.id))
+
+  if (explicit.length) {
+    labels.push(...explicit.map((meeting) => meeting.title))
+    sections.push(`TAGGED MEETINGS\n${clip(explicit.map((meeting) => formatMeetingDeep(meeting, folders)).join('\n\n'), 7000)}`)
+  }
+
+  const projectSections: string[] = []
+  for (const id of tags.projectIds) {
+    const folder = folders.find((item) => item.id === id)
+    if (!folder) continue
+    labels.push(folder.name)
+    const meetings = folder.meetingIds
+      .map((meetingId) => rows.find((row) => row.id === meetingId))
+      .filter((row): row is MeetingRow => Boolean(row))
+      .filter((row) => !explicitIds.has(row.id))
+    const body = meetings.length
+      ? meetings.map((meeting) => formatMeetingBrief(meeting, folders)).join('\n\n')
+      : 'No meetings in this folder yet.'
+    projectSections.push(`# ${folder.name}\n${folder.blurb}\n${body}`)
+  }
+  if (projectSections.length) sections.push(`TAGGED PROJECTS\n${clip(projectSections.join('\n\n'), 4000)}`)
+
+  const peopleSections: string[] = []
+  for (const name of tags.people) {
+    labels.push(name)
+    const key = name.trim().toLowerCase()
+    const meetings = rows.filter(
+      (row) => !explicitIds.has(row.id) && row.people.some((person) => person.trim().toLowerCase() === key),
+    )
+    const body = meetings.length
+      ? meetings.map((meeting) => formatMeetingBrief(meeting, folders)).join('\n\n')
+      : 'No meetings name this person.'
+    peopleSections.push(`@ ${name}\n${body}`)
+  }
+  if (peopleSections.length) sections.push(`TAGGED PEOPLE\n${clip(peopleSections.join('\n\n'), 4000)}`)
+
+  const skills = tags.skillIds.map((id) => skillById(id)).filter((skill): skill is AskSkill => Boolean(skill))
+  if (skills.length) {
+    labels.push(...skills.map((skill) => skill.name))
+    sections.push(`SKILL\n${skills.map((skill) => `${skill.name}: ${skill.instruction}`).join('\n')}`)
+  }
+
+  return { label: labels.join(' · '), sections }
+}
+
 export function buildAskPack(input: {
   focus: AskFocus
   question: string
   rows: MeetingRow[]
   folders: ProjectFolder[]
   upcoming: CalendarEvent[]
-  taggedMeetingIds?: string[]
+  tags?: AskTags
 }): AskPack {
   const question = input.question.trim()
   const focus = focusBlock(input.focus, input.rows, input.folders, input.upcoming)
-  const taggedIds = [...new Set((input.taggedMeetingIds ?? []).filter(Boolean))]
-  const taggedMeetings = taggedIds
-    .map((id) => input.rows.find((row) => row.id === id))
-    .filter((row): row is MeetingRow => Boolean(row))
-  const taggedBlock = taggedMeetings.length
-    ? taggedMeetings.map((meeting) => formatMeetingDeep(meeting, input.folders)).join('\n\n')
-    : ''
-  const skipId =
-    taggedIds[0] ?? (input.focus.page === 'notes' ? input.focus.meetingId : undefined)
+  const tags = input.tags ?? emptyAskTags()
+  const scope = scopeBlocks(tags, input.rows, input.folders)
+  const skipId = tags.meetingIds[0] ?? (input.focus.page === 'notes' ? input.focus.meetingId : undefined)
   const related = relatedBlock(question, input.rows, input.folders, skipId)
   const corpus = corpusBlock(input.rows, input.folders, skipId)
+  const hasScope = scope.sections.length > 0
 
   const context = [
-    taggedBlock
-      ? `TAGGED MEETINGS\n${clip(taggedBlock, 7000)}`
-      : `FOCUS (${focus.label})\n${clip(focus.text, 6000)}`,
-    taggedBlock ? `PAGE FOCUS (${focus.label})\n${clip(focus.text, 2500)}` : null,
+    ...scope.sections,
+    hasScope ? `PAGE FOCUS (${focus.label})\n${clip(focus.text, 2500)}` : `FOCUS (${focus.label})\n${clip(focus.text, 6000)}`,
     `RELATED SEARCH\n${clip(related, 2500)}`,
     `CORPUS\n${clip(corpus, 4000)}`,
-  ]
-    .filter(Boolean)
-    .join('\n\n')
+  ].join('\n\n')
 
   return {
-    focusLabel: taggedMeetings.length
-      ? taggedMeetings.map((meeting) => meeting.title).join(' · ')
-      : focus.label,
+    focusLabel: scope.label || focus.label,
     system: SYSTEM,
     prompt: `CONTEXT\n${context}\n\nQUESTION\n${question}`,
   }
 }
 
-/** Extractive reply when the desktop writer is unavailable (Vite-only demo). */
-export function localAskReply(question: string, rows: MeetingRow[], folders: ProjectFolder[], focus: AskFocus): string {
-  const hits = searchMeetings(rows, folders, question, 'all').slice(0, 4)
+function skillLines(skillId: string, meetings: MeetingRow[]): string[] {
+  const lines: string[] = []
+  for (const meeting of meetings) {
+    const notes = notesFor(meeting.id)
+    if (!notes) continue
+    if (skillId === 'summary' || skillId === 'prep') {
+      lines.push(`• ${meeting.title} — ${clip(notes.summary, 200)}`)
+    }
+    if (skillId === 'owners' || skillId === 'prep') {
+      for (const action of notes.actions) {
+        lines.push(
+          `• ${action.text} — ${action.owner ?? 'Unassigned'}${action.due ? `, ${action.due}` : ''} (${meeting.title})`,
+        )
+      }
+    }
+    if (skillId === 'follow-ups') {
+      for (const action of notes.actions.filter((item) => !item.owner)) {
+        lines.push(`• ${action.text}${action.due ? ` — ${action.due}` : ''} (${meeting.title})`)
+      }
+    }
+    if (skillId === 'decisions') {
+      for (const takeaway of notes.takeaways) lines.push(`• ${takeaway} (${meeting.title})`)
+    }
+    if (skillId === 'risks') {
+      const blobs = [notes.summary, ...notes.takeaways, ...notes.utterances.map((line) => line.text)]
+      for (const text of blobs) {
+        if (!/risk|slip|block|late|worry|fail/i.test(text)) continue
+        lines.push(`• ${clip(text, 180)} (${meeting.title})`)
+      }
+    }
+  }
+  return lines.slice(0, 8)
+}
+
+/** Extractive reply when no cloud writer is ready. */
+export function localAskReply(
+  question: string,
+  rows: MeetingRow[],
+  folders: ProjectFolder[],
+  focus: AskFocus,
+  tags: AskTags = emptyAskTags(),
+): string {
+  const narrowed = tags.meetingIds.length + tags.projectIds.length + tags.people.length > 0
+  const pool = narrowed ? meetingsForTags(tags, rows, folders) : rows
+  if (narrowed && !pool.length) return 'Nothing in your notes matches that tag.'
+
+  if (tags.skillIds.length) {
+    const lines = tags.skillIds.flatMap((id) => skillLines(id, pool.slice(0, 6)))
+    if (lines.length) {
+      return `From your notes (local search — link a cloud writer in Settings for a fuller answer):\n\n${lines.join('\n')}`
+    }
+  }
+
+  const hits = searchMeetings(pool, folders, question, 'all').slice(0, 4)
   if (hits.length) {
     const lines = hits.map((hit) => {
       const top = hit.hits[0]
@@ -221,7 +320,7 @@ export function localAskReply(question: string, rows: MeetingRow[], folders: Pro
 
   if (focus.page === 'notes') {
     const meeting = rows.find((row) => row.id === focus.meetingId)
-    const notes = meeting ? richNotes[meeting.id] : undefined
+    const notes = meeting ? notesFor(meeting.id) : undefined
     if (notes) {
       return `I do not see a direct match for that. On this meeting (${meeting?.title}): ${clip(notes.summary, 280)}`
     }

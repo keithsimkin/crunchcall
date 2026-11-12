@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { engineById, engineDefaults, speechPrivacy } from '../features/engines/catalog'
-import { onDictationsChange, readDictations, wordCount } from '../features/dictate/history'
-import { dictateDemoStats, listedDictations, type DictationRow } from './fixtures'
+import { loadDictationRows, onDictationsChange, wordCount } from '../features/dictate/history'
+import { callEngine } from '../features/engines/call'
+import type { DictationRow } from './fixtures'
 import { MoreIcon, SearchIcon, ShareIcon } from './icons'
 import { TargetReel } from './TargetReel'
 
@@ -15,6 +16,26 @@ const hotkeys = ['Ctrl', 'Win']
 
 function formatWords(count: number): string {
   return count.toLocaleString('en-US')
+}
+
+function dictationStats(rows: DictationRow[], words: number): { hours: string; streak: number } {
+  const savedMinutes = Math.max(0, words / 40 - words / 150)
+  const hours = savedMinutes < 6 ? savedMinutes / 60 : savedMinutes / 60
+  const days = new Set(
+    rows.map((row) => {
+      const ms = row.createdAt ?? Date.now()
+      const date = new Date(ms)
+      return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+    }),
+  )
+  let streak = 0
+  const cursor = new Date()
+  cursor.setHours(0, 0, 0, 0)
+  while (days.has(`${cursor.getFullYear()}-${cursor.getMonth()}-${cursor.getDate()}`)) {
+    streak += 1
+    cursor.setDate(cursor.getDate() - 1)
+  }
+  return { hours: (hours >= 10 ? hours.toFixed(0) : hours.toFixed(1)), streak }
 }
 
 function HistoryEntry({ row }: { row: DictationRow }) {
@@ -39,11 +60,25 @@ function HistoryEntry({ row }: { row: DictationRow }) {
 
 export function DictateScreen({ speechId }: DictateScreenProps) {
   const speech = engineById(speechId) ?? engineById(engineDefaults.speech)
-  const [lines, setLines] = useState<DictationRow[]>(() => readDictations())
+  const [lines, setLines] = useState<DictationRow[]>([])
   const [query, setQuery] = useState('')
   const [message, setMessage] = useState('')
+  const [pasted, setPasted] = useState('')
 
-  useEffect(() => onDictationsChange(() => setLines(readDictations())), [])
+  useEffect(() => {
+    let cancelled = false
+    const reload = () => {
+      void loadDictationRows().then((rows) => {
+        if (!cancelled) setLines(rows)
+      })
+    }
+    reload()
+    const stop = onDictationsChange(reload)
+    return () => {
+      cancelled = true
+      stop()
+    }
+  }, [])
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -59,9 +94,8 @@ export function DictateScreen({ speechId }: DictateScreenProps) {
 
   if (!speech) return null
 
-  const fixtureWords = listedDictations.reduce((sum, row) => sum + wordCount(row.text), 0)
-  const liveWords = lines.reduce((sum, row) => sum + wordCount(row.text), 0)
-  const words = dictateDemoStats.words + Math.max(0, liveWords - fixtureWords)
+  const words = lines.reduce((sum, row) => sum + wordCount(row.text), 0)
+  const stats = dictationStats(lines, words)
 
   async function shareLatest() {
     const latest = lines[0]?.text
@@ -103,22 +137,22 @@ export function DictateScreen({ speechId }: DictateScreenProps) {
         <article>
           <span>Time saved</span>
           <strong>
-            {dictateDemoStats.timeSavedHours}
+            {stats.hours}
             <em>hrs</em>
           </strong>
         </article>
         <article>
           <span>Day streak</span>
           <strong>
-            {dictateDemoStats.streakDays}
+            {stats.streak}
             <em>days</em>
           </strong>
         </article>
         <article>
-          <span>Average speed</span>
+          <span>Sessions</span>
           <strong>
-            {dictateDemoStats.wpm}
-            <em>wpm</em>
+            {lines.length}
+            <em>{lines.length === 1 ? 'note' : 'notes'}</em>
           </strong>
         </article>
       </div>
@@ -130,10 +164,47 @@ export function DictateScreen({ speechId }: DictateScreenProps) {
         {message ? <p className="muted">{message}</p> : null}
       </div>
 
+      {speech.where === 'external' ? (
+        <form
+          className="composer"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const text = pasted.trim()
+            if (!text) return
+            void callEngine('dictate.commit', { text, moduleId: speech.id }).then((result) => {
+              setMessage(result.ok ? 'Saved.' : result.message)
+              if (result.ok) {
+                setPasted('')
+                void loadDictationRows().then(setLines)
+              }
+            })
+          }}
+        >
+          <label className="sr" htmlFor="dictate-paste">
+            Paste dictation
+          </label>
+          <input
+            id="dictate-paste"
+            value={pasted}
+            onChange={(event) => setPasted(event.target.value)}
+            placeholder={`Paste what you dictated in ${speech.name}`}
+            autoComplete="off"
+          />
+          <button type="submit" className="btn primary small">
+            Save
+          </button>
+        </form>
+      ) : null}
+
       <div className="history-head">
         <h2>History</h2>
         <div className="history-tools">
-          <button type="button" className="icon-btn" aria-label="History options">
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Copy all dictations"
+            onClick={() => void navigator.clipboard.writeText(lines.map((row) => row.text).join('\n\n')).then(() => setMessage('Copied history.'))}
+          >
             <MoreIcon />
           </button>
           <label className="search">
