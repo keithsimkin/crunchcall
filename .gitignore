@@ -14,6 +14,7 @@ dist-ssr
 electron/oauth.local.json
 licensing/private.pem
 licensing/orders.json
+licensing/users.json
 native/target
 release
 

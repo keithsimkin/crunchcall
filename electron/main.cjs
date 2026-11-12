@@ -8,6 +8,7 @@ const updates = require('./updates.cjs')
 const license = require('./license.cjs')
 
 const BUY_URL = 'https://annotated.click/buy'
+const ACCOUNT_URL = 'https://annotated.click/account'
 
 const devUrl = process.env.CRUNCHCALL_DEV_URL || 'http://127.0.0.1:5173/#app'
 const iconPath = path.join(__dirname, process.platform === 'win32' ? 'icon.ico' : 'icon.png')
@@ -624,6 +625,11 @@ ipcMain.handle('license:clear', (event) => {
 ipcMain.handle('license:buy', async (event) => {
   if (!fromMain(event)) return
   await shell.openExternal(BUY_URL)
+})
+
+ipcMain.handle('license:account', async (event) => {
+  if (!fromMain(event)) return
+  await shell.openExternal(ACCOUNT_URL)
 })
 
 ipcMain.handle('overlay:set', (event, cue) => {

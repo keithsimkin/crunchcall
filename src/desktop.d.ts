@@ -91,6 +91,7 @@ declare global {
       activateLicense?: (token: string) => Promise<LicenseActivateResult>
       clearLicense?: () => Promise<LicenseStatus>
       buyLicense?: () => Promise<void>
+      openAccount?: () => Promise<void>
       updateStatus?: () => Promise<UpdateStatus>
       installUpdate?: () => Promise<UpdateStatus>
       onUpdate?: (callback: (status: UpdateStatus) => void) => () => void
