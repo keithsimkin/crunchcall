@@ -1,0 +1,144 @@
+:root,
+[data-theme='dark'] {
+  --ink: #f4f4f5;
+  --muted: #a1a1aa;
+  --soft: #71717a;
+  --line: #2c2c32;
+  --wash: #232328;
+  --paper: #161618;
+  --canvas: #0c0c0e;
+  --green: #6ee7b7;
+  --green-soft: rgba(110, 231, 183, 0.14);
+  --danger: #f87171;
+  --surface: #1c1c20;
+  --surface-2: #141418;
+  --surface-3: #121214;
+  --surface-hover: #1a1a1e;
+  --border-strong: #2a2a30;
+  --border-loud: #3a3a42;
+  --chip: #d4d4d8;
+  --invert: #f4f4f5;
+  --invert-ink: #111113;
+  --invert-hover: #ffffff;
+  --track: #2a2a2e;
+  --switch-off: #3f3f46;
+  --focus: #f4f4f5;
+  --selection: #3f3f46;
+  --selection-ink: #fafafa;
+  --scrim: rgba(0, 0, 0, 0.62);
+  --shadow-pop: 0 24px 80px rgba(0, 0, 0, 0.55);
+  --overlay-line: #34343c;
+  --overlay-bg: #101012;
+  --overlay-ink: #fafafa;
+  --overlay-accent: #86efac;
+  --overlay-muted: #e4e4e7;
+  --pop-nav: #18181b;
+  --pop-group: #141416;
+  --avatar: #2a2a30;
+  --face: #3f3f46;
+  --face-ink: #e4e4e7;
+  --warn-soft: rgba(251, 191, 36, 0.14);
+  --warn: #fbbf24;
+  --gap: #fdba74;
+  --check-border: #52525b;
+  --font: 'Inter', system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--canvas);
+  color-scheme: dark;
+  font-family: var(--font);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+[data-theme='light'] {
+  /* Warm paper + moss, closer to the landing page than cold zinc. */
+  --ink: #1c1c1c;
+  --muted: #5f5f5a;
+  --soft: #6a6a64;
+  --line: #e4e4df;
+  --wash: #ecece7;
+  --paper: #ffffff;
+  --canvas: #f0f0ec;
+  --green: #2f6b4a;
+  --green-soft: rgba(47, 107, 74, 0.12);
+  --danger: #c43c2d;
+  --surface: #ffffff;
+  --surface-2: #f7f7f3;
+  --surface-3: #fbfbf9;
+  --surface-hover: #e8e8e2;
+  --border-strong: #d8d8d1;
+  --border-loud: #b4b4aa;
+  --chip: #3a3a35;
+  --invert: #171717;
+  --invert-ink: #fafaf7;
+  --invert-hover: #0d0d0d;
+  --track: #e4e4df;
+  --switch-off: #d4d4cc;
+  --focus: #1c1c1c;
+  --selection: #d7e4c8;
+  --selection-ink: #17210f;
+  --scrim: rgba(23, 23, 23, 0.4);
+  --shadow-pop: 0 24px 80px rgba(20, 24, 18, 0.14);
+  --overlay-line: #34343c;
+  --overlay-bg: #101012;
+  --overlay-ink: #fafafa;
+  --overlay-accent: #86efac;
+  --overlay-muted: #e4e4e7;
+  --pop-nav: #fafaf8;
+  --pop-group: #f0f0ec;
+  --avatar: #e4e4df;
+  --face: #d8d8d1;
+  --face-ink: #1c1c1c;
+  --warn-soft: rgba(176, 106, 18, 0.12);
+  --warn: #b06a12;
+  --gap: #b45309;
+  --check-border: #b4b4aa;
+  color: var(--ink);
+  background: var(--canvas);
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:root {
+  /* Height of the custom window band; only used inside the desktop shell. */
+  --titlebar: 0px;
+}
+
+html[data-desktop] {
+  --titlebar: 40px;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--canvas);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: var(--selection);
+  color: var(--selection-ink);
+}

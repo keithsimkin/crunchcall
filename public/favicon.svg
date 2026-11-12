@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <style>
+    .bg { fill: #14241C; }
+    .face { fill: #D4E86A; }
+    .eye { fill: #14241C; }
+    .shine { fill: #E8F29A; }
+    .mouth { stroke: #14241C; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #D4E86A; }
+      .face { fill: #14241C; }
+      .eye { fill: #D4E86A; }
+      .shine { fill: #F3F9C4; }
+      .mouth { stroke: #D4E86A; }
+    }
+  </style>
+  <rect class="bg" width="64" height="64" rx="16"/>
+  <g class="face">
+    <circle cx="20" cy="18.5" r="11"/>
+    <circle cx="44" cy="18.5" r="11"/>
+    <path d="M12 36.5c.4-8 7.6-13 20-13s19.6 5 20 13c.7 8.2-4.6 16.2-20 16.2S11.3 44.7 12 36.5z"/>
+  </g>
+  <g class="eye">
+    <circle cx="20" cy="19.4" r="4.15"/>
+    <circle cx="44" cy="19.4" r="4.15"/>
+  </g>
+  <g class="shine">
+    <circle cx="21.35" cy="18.15" r="1.25"/>
+    <circle cx="45.35" cy="18.15" r="1.25"/>
+  </g>
+  <path class="mouth" d="M23.2 42.2c2.9 3.5 14.7 3.5 17.6 0" fill="none" stroke-width="2.45" stroke-linecap="round"/>
+</svg>
