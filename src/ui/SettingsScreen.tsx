@@ -30,7 +30,7 @@ import {
   type SupportActionId,
 } from './settingsState'
 import { appVersion } from './updates'
-import { BUY_URL, type LicenseDesk } from './useLicense'
+import { ACCOUNT_URL, BUY_URL, type LicenseDesk } from './useLicense'
 
 type PlaceId = 'local' | 'cloud' | 'external'
 
@@ -1008,6 +1008,14 @@ function LicensePage({ license }: { license: LicenseDesk }) {
     window.open(BUY_URL, '_blank', 'noopener,noreferrer')
   }
 
+  async function openAccount() {
+    if (window.crunchcall?.openAccount) {
+      await window.crunchcall.openAccount()
+      return
+    }
+    window.open(ACCOUNT_URL, '_blank', 'noopener,noreferrer')
+  }
+
   async function activate() {
     const activateLicense = window.crunchcall?.activateLicense
     if (!activateLicense) return
@@ -1067,7 +1075,7 @@ function LicensePage({ license }: { license: LicenseDesk }) {
       <div>
         <Section label="Add a license">
           {desktop ? (
-            <Row title="License" help="Paste the license from the payment page." stack>
+            <Row title="License" help="Paste the license from your account, or from the payment page." stack>
               <textarea
                 className="license-field"
                 aria-label="License"
@@ -1096,6 +1104,11 @@ function LicensePage({ license }: { license: LicenseDesk }) {
           <Row title="Buy Unlock" help="One payment. You get the license and the signed installer.">
             <button type="button" className="btn small primary" onClick={() => void buy()}>
               Buy Unlock
+            </button>
+          </Row>
+          <Row title="Your licenses" help="Sign in with the email you paid with. The key stays there after the payment page is closed.">
+            <button type="button" className="btn small" onClick={() => void openAccount()}>
+              Open account
             </button>
           </Row>
         </Section>

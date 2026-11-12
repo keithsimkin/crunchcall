@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { LogoMark } from './icons'
-import { BUY_URL } from './useLicense'
+import { ACCOUNT_URL, BUY_URL } from './useLicense'
 import './LandingPage.css'
 
 type Surface = 'list' | 'live' | 'settings'
@@ -166,6 +166,34 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
     return () => window.clearTimeout(timer)
   }, [arrived])
 
+  useEffect(() => {
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const nodes = Array.from(document.querySelectorAll<HTMLElement>('.lp-reveal'))
+    if (reduce) {
+      nodes.forEach((node) => node.classList.add('is-visible'))
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible')
+            observer.unobserve(entry.target)
+          }
+        })
+      },
+      { threshold: 0.1, rootMargin: '0px 0px -30px 0px' },
+    )
+    nodes.forEach((node) => observer.observe(node))
+    const fallback = window.setTimeout(() => {
+      nodes.forEach((node) => node.classList.add('is-visible'))
+    }, 2500)
+    return () => {
+      window.clearTimeout(fallback)
+      observer.disconnect()
+    }
+  }, [])
+
   function go(id: string) {
     setMenuOpen(false)
     const target = document.getElementById(id)
@@ -283,7 +311,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
           </div>
         </section>
 
-        <section className="lp-platforms" aria-label="Call platforms">
+        <section className="lp-platforms lp-reveal" aria-label="Call platforms">
           <p>Beside the calls you already take. Never in the participant list.</p>
           <ul className="lp-logo-row">
             {callPlatforms.map((brand) => (
@@ -301,7 +329,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
           </ul>
         </section>
 
-        <section className="lp-about" aria-labelledby="about-title">
+        <section className="lp-about lp-reveal" aria-labelledby="about-title">
           <Kicker>About</Kicker>
           <h2 id="about-title" className="lp-sr">
             About annotated
@@ -327,14 +355,14 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
           </div>
         </section>
 
-        <section id="product" aria-labelledby="product-title">
+        <section id="product" className="lp-reveal" aria-labelledby="product-title">
           <div className="lp-block">
             <Kicker>Capabilities</Kicker>
             <h2 id="product-title">The tools a meeting needs, without another guest.</h2>
             <p className="lp-sub">Coaching while the call is still open. Notes, owners, and next steps when it is over.</p>
           </div>
           <div className="lp-feature-scene">
-            <div className="lp-feature-grid">
+            <div className="lp-feature-grid lp-reveal lp-reveal-stagger">
               <article
                 className={arrived === 'coaching' || arrived === 'product' ? 'lp-feature-card is-arrived' : 'lp-feature-card'}
                 id="coaching"
@@ -369,7 +397,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
           </div>
         </section>
 
-        <section className="lp-block" id="connect" aria-labelledby="connect-title">
+        <section className="lp-block lp-reveal" id="connect" aria-labelledby="connect-title">
           <Kicker>Integrations</Kicker>
           <h2 id="connect-title">Private by default. A bigger model only if you bring one.</h2>
           <p className="lp-sub">
@@ -387,7 +415,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
           </ul>
         </section>
 
-        <section className="lp-block" id="compare" aria-labelledby="compare-title">
+        <section className="lp-block lp-reveal" id="compare" aria-labelledby="compare-title">
           <Kicker>Compare</Kicker>
           <h2 id="compare-title">Next to the notepads people already use.</h2>
           <p className="lp-sub">
@@ -458,7 +486,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
           </p>
         </section>
 
-        <section className="lp-block lp-pricing" id="pricing" aria-labelledby="pricing-title">
+        <section className="lp-block lp-pricing lp-reveal" id="pricing" aria-labelledby="pricing-title">
           <Kicker>Pricing</Kicker>
           <h2 id="pricing-title">A notepad you buy once.</h2>
           <p className="lp-sub">
@@ -502,7 +530,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
         </section>
       </main>
 
-      <footer className="lp-footer">
+      <footer className="lp-footer lp-reveal">
         <div className="lp-footer-inner">
           <div className="lp-footer-top">
             <div>
@@ -541,9 +569,36 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
               >
                 Pricing
               </a>
+              <a
+                href="#connect"
+                onClick={(event) => {
+                  event.preventDefault()
+                  go('connect')
+                }}
+              >
+                Integrations
+              </a>
+              <button type="button" onClick={() => onOpenApp('list')}>
+                Download the app
+              </button>
             </div>
             <div className="lp-footcol">
               <h3>Privacy</h3>
+              <a href="https://annotated.click/privacy" target="_blank" rel="noopener noreferrer">
+                Privacy policy
+              </a>
+              <a href="https://annotated.click/terms" target="_blank" rel="noopener noreferrer">
+                Terms of service
+              </a>
+              <a
+                href="#connect"
+                onClick={(event) => {
+                  event.preventDefault()
+                  go('connect')
+                }}
+              >
+                Data stays on this PC
+              </a>
               <a
                 href="#product"
                 onClick={(event) => {
@@ -553,45 +608,24 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
               >
                 No meeting bot
               </a>
-              <a
-                href="#connect"
-                onClick={(event) => {
-                  event.preventDefault()
-                  go('connect')
-                }}
-              >
-                Audio stays on this PC
-              </a>
-              <a
-                href="#connect"
-                onClick={(event) => {
-                  event.preventDefault()
-                  go('connect')
-                }}
-              >
-                A key sees text only
-              </a>
-              <a
-                href="#pricing"
-                onClick={(event) => {
-                  event.preventDefault()
-                  go('pricing')
-                }}
-              >
-                No account for local mode
-              </a>
             </div>
             <div className="lp-footcol">
-              <h3>App</h3>
-              <button type="button" onClick={() => onOpenApp('list')}>
-                Open the app
-              </button>
-              <button type="button" onClick={() => onOpenApp('live')}>
-                Start a meeting
-              </button>
-              <button type="button" onClick={() => onOpenApp('settings')}>
-                Settings
-              </button>
+              <h3>Support</h3>
+              <a href={ACCOUNT_URL} target="_blank" rel="noopener noreferrer">
+                Your licenses
+              </a>
+              <a href="mailto:hello@annotated.click?subject=annotated%20support">
+                Get support
+              </a>
+              <a href="https://annotated.click" target="_blank" rel="noopener noreferrer">
+                Help center
+              </a>
+              <a href="mailto:hello@annotated.click?subject=annotated%20bug%20report">
+                Report a bug
+              </a>
+              <a href="mailto:hello@annotated.click?subject=annotated%20feature%20request">
+                Request a feature
+              </a>
             </div>
           </div>
           <div className="lp-footer-base">

@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld('crunchcall', {
   activateLicense: (token) => ipcRenderer.invoke('license:activate', String(token || '')),
   clearLicense: () => ipcRenderer.invoke('license:clear'),
   buyLicense: () => ipcRenderer.invoke('license:buy'),
+  openAccount: () => ipcRenderer.invoke('license:account'),
   updateStatus: () => ipcRenderer.invoke('update:status'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
   onUpdate: (callback) => {

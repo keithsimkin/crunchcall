@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { LicenseStatus } from '../desktop'
 
 export const BUY_URL = 'https://annotated.click/buy'
+export const ACCOUNT_URL = 'https://annotated.click/account'
 
 export function useLicense() {
   const desktop = typeof window !== 'undefined' && Boolean(window.crunchcall?.licenseStatus)
