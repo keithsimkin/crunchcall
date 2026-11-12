@@ -48,7 +48,7 @@ export const mcpClients: McpClient[] = [
     id: 'chatgpt',
     name: 'ChatGPT',
     mark: '/logos/openai.svg',
-    where: 'Settings → Connectors → Add MCP server. Name it CrunchCall, command crunchcalld, arguments mcp --stdio.',
+    where: 'Settings → Connectors → Add MCP server. Name it annotated, command crunchcalld, arguments mcp --stdio.',
   },
 ]
 
@@ -116,7 +116,7 @@ export function mcpConfigText(client: McpClientId): { label: string; text: strin
   if (client === 'chatgpt') {
     return {
       label: 'Copy config',
-      text: 'Name: CrunchCall\nCommand: crunchcalld\nArguments: mcp --stdio',
+      text: 'Name: annotated\nCommand: crunchcalld\nArguments: mcp --stdio',
     }
   }
   return { label: 'Copy config', text: serverConfig }
@@ -127,9 +127,9 @@ export function mcpSetupPrompt(name: string, client: McpClientId): string {
   const chosen = mcpClientById(client)
   const command = `How to add it: ${chosen.where}\n\n${serverConfig}`
 
-  return `You are helping ${who} connect CrunchCall, a local meeting notepad on this Windows PC. Notes and audio stay on this machine. No meeting bot joins the call.
+  return `You are helping ${who} connect annotated, a local meeting notepad on this Windows PC. Notes and audio stay on this machine. No meeting bot joins the call.
 
-Add the CrunchCall MCP server if it is not already connected.
+Add the annotated MCP server if it is not already connected.
 
 ${command}
 
@@ -140,7 +140,7 @@ The server is local and read-only. It exposes:
 - read_transcript — timestamped lines for one meeting
 - list_projects — folders and the meetings filed in them
 
-Use these tools for anything about the meetings. Do not invent notes, quotes, owners, or dates. There is no audio tool. If a tool is missing, say the CrunchCall server is not connected and repeat the config above.
+Use these tools for anything about the meetings. Do not invent notes, quotes, owners, or dates. There is no audio tool. If a tool is missing, say the annotated server is not connected and repeat the config above.
 
 Then list the recent meetings and any open next steps.`
 }

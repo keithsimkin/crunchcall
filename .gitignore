@@ -11,7 +11,11 @@ node_modules
 dist
 dist-ssr
 *.local
+electron/oauth.local.json
+licensing/private.pem
+licensing/orders.json
 native/target
+release
 
 # Editor directories and files
 .vscode/*

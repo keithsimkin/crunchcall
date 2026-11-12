@@ -75,8 +75,9 @@ export function DictatePopup({ speechId, open, onOpenChange }: DictatePopupProps
 
     if (!window.crunchcall?.engine) {
       stream.getTracks().forEach((track) => track.stop())
-      // Demo mode without the desktop sidecar: keep the popup live.
-      setStatus('Speak now — demo mode (desktop engine needed to transcribe)')
+      holdingRef.current = false
+      setListening(false)
+      setStatus('The desktop engine is not running, so this cannot transcribe.')
       return
     }
 

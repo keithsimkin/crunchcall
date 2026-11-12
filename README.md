@@ -1,12 +1,12 @@
-# CrunchCall
+# annotated
 
-**Crunch every call.** Local-first AI notepad for meetings. Speech and notes stay on this PC unless you pick a cloud engine. Dictate in the app with the same speech model you use on the call, or hand the text over from Willow and the other dictation apps.
+**Annotate every call.** Local-first AI notepad for meetings, at [annotated.click](https://annotated.click). Speech and notes stay on this PC unless you pick a cloud engine. Dictate in the app with the same speech model you use on the call, or hand the text over from Willow and the other dictation apps.
 
-CrunchCall sits between [MeetMouse](https://meetmouse.com/) (on-device privacy + live coaching) and [Granola](https://www.granola.ai/) (polish, memory, shareable notes). No bot joins your call.
+annotated sits between [MeetMouse](https://meetmouse.com/) (on-device privacy + live coaching) and [Granola](https://www.granola.ai/) (polish, memory, shareable notes). No bot joins your call.
 
 ## Name
 
-**CrunchCall** — snack-bar energy for every conversation: you crunch the meeting; notes, owners, and next steps stay behind.
+**annotated** — notes, owners, and next steps from the calls you already take. The product lives at [annotated.click](https://annotated.click).
 
 ## Stack (v0)
 

@@ -2,6 +2,7 @@ import { useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import type { CalendarEvent } from '../features/calendar/ics'
 import { formatSynced, formatWhen } from '../features/calendar/format'
 import { connectUrl, importCalendarText, setAskToStart, setCalendarError, setEnabled } from '../features/calendar/store'
+import { AccountConnect } from './AccountConnect'
 import { useCalendarClock } from './useCalendar'
 
 export function CalendarScreen({ onStart }: { onStart: (event: CalendarEvent) => void }) {
@@ -46,7 +47,7 @@ export function CalendarScreen({ onStart }: { onStart: (event: CalendarEvent) =>
           <h1 id="calendar-title" className="page-title">
             Calendar
           </h1>
-          <p className="lede">Know what’s next. CrunchCall never joins the meeting.</p>
+          <p className="lede">Know what’s next. annotated never joins the meeting.</p>
         </div>
       </div>
 
@@ -56,7 +57,7 @@ export function CalendarScreen({ onStart }: { onStart: (event: CalendarEvent) =>
         {!calendar.error && !calendar.enabled ? <p className="empty">Sync is off.</p> : null}
         {!calendar.error && calendar.enabled && upcoming.length === 0 ? (
           <p className="empty">
-            {calendar.source ? 'Nothing coming up in the next two weeks.' : 'Add a calendar link to see meetings here.'}
+            {calendar.source ? 'Nothing coming up in the next two weeks.' : 'Connect Google or Outlook, or add a calendar link.'}
           </p>
         ) : null}
         {upcoming.length > 0 ? (
@@ -83,18 +84,19 @@ export function CalendarScreen({ onStart }: { onStart: (event: CalendarEvent) =>
           <Switch on={calendar.enabled} label="Sync calendar" onClick={() => setEnabled(!calendar.enabled)} />
         </Row>
         <Row title="Ask to turn on" help="When a meeting starts, ask with a notification and a prompt in the app.">
-          <Switch on={calendar.askToStart} label="Ask to turn CrunchCall on" onClick={() => setAskToStart(!calendar.askToStart)} />
+          <Switch on={calendar.askToStart} label="Ask to turn annotated on" onClick={() => setAskToStart(!calendar.askToStart)} />
         </Row>
       </div>
 
       <div className="set-card">
         <h2>Source</h2>
+        <AccountConnect />
         <div className="cal-block">
-          <p className="set-label">Calendar link</p>
+          <p className="set-label">{desktop ? 'Apple or another calendar' : 'Calendar link'}</p>
           <p className="help">
             {desktop
-              ? 'Secret address from Google, Outlook, or Apple. A webcal link is fine.'
-              : 'Secret address from Google, Outlook, or Apple. If the browser blocks it, import an .ics file.'}
+              ? 'Private address from Apple, Fastmail, or another calendar. A webcal link is fine.'
+              : 'Private address from Google, Outlook, or Apple. If the browser blocks it, import an .ics file. Google and Outlook sign-in is in the desktop app.'}
           </p>
           <label className="field">
             <span className="sr">Calendar link</span>
@@ -121,7 +123,7 @@ export function CalendarScreen({ onStart }: { onStart: (event: CalendarEvent) =>
           <input ref={fileRef} className="sr" type="file" accept=".ics,text/calendar" onChange={(event) => void onFile(event)} />
         </div>
         {calendar.source?.kind === 'file' ? (
-          <p className="help">Using {calendar.source.name}. Import again to refresh. A link stays current.</p>
+          <p className="help">Using {calendar.source.name}. Import again to refresh. A sign-in or a link stays current.</p>
         ) : null}
         {calendar.error ? <p className="help cal-error">{calendar.error}</p> : null}
         {!calendar.error && calendar.syncedAt ? (

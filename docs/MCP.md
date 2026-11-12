@@ -1,6 +1,6 @@
-# CrunchCall MCP
+# annotated MCP
 
-CrunchCall exposes a **local, read-only MCP server** so other AI tools can search and read the notes already captured on this PC. No meeting bot, no cloud hop, no audio, and no API keys cross the boundary.
+annotated exposes a **local, read-only MCP server** so other AI tools can search and read the notes already captured on this PC. No meeting bot, no cloud hop, no audio, and no API keys cross the boundary.
 
 The app ships a demo server in [`mcp/server.ts`](../mcp/server.ts) that serves the same sample notes as the UI. It is the behavior spec for the native `crunchcalld mcp --stdio` command described in [`docs/PLAN.md`](PLAN.md).
 
@@ -21,20 +21,20 @@ Open **Settings → Developer → Edit Config** and add:
 ```json
 {
   "mcpServers": {
-    "crunchcall": {
+    "annotated": {
       "command": "bun",
-      "args": ["C:\\path\\to\\crunchcall\\mcp\\server.ts"]
+      "args": ["C:\\path\\to\\annotated\\mcp\\server.ts"]
     }
   }
 }
 ```
 
-Restart Claude Desktop. The CrunchCall tools appear in the tools menu.
+Restart Claude Desktop. The annotated tools appear in the tools menu.
 
 Claude Code can use the same JSON, or:
 
 ```bash
-claude mcp add crunchcall -- bun C:\path\to\crunchcall\mcp\server.ts
+claude mcp add annotated -- bun C:\path\to\annotated\mcp\server.ts
 ```
 
 ### Gemini CLI
@@ -48,9 +48,9 @@ Add the same server to Cursor's MCP settings (`Settings → MCP → Add server`)
 ```json
 {
   "mcpServers": {
-    "crunchcall": {
+    "annotated": {
       "command": "bun",
-      "args": ["C:\\path\\to\\crunchcall\\mcp\\server.ts"]
+      "args": ["C:\\path\\to\\annotated\\mcp\\server.ts"]
     }
   }
 }
@@ -62,7 +62,7 @@ Use the stdio transport with:
 
 ```text
 command: bun
-args:    C:\path\to\crunchcall\mcp\server.ts
+args:    C:\path\to\annotated\mcp\server.ts
 ```
 
 In the packaged app this becomes `crunchcalld mcp --stdio`, with no path to manage.

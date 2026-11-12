@@ -132,6 +132,11 @@ impl Engine {
             "meetings.list" => self.meetings_list(),
             "meetings.get" => self.meetings_get(params),
             "meetings.update" => self.meetings_update(params),
+            "meetings.delete" => self.meetings_delete(params),
+            "folders.get" => self.folders_get(),
+            "folders.set" => self.folders_set(params),
+            "mcp.get" => self.mcp_get(),
+            "mcp.set" => self.mcp_set(params),
             "utterances.append" => self.utterances_append(params),
             "utterances.list" => self.utterances_list(params),
             "notes.get" => self.notes_get(params),
@@ -444,6 +449,53 @@ impl Engine {
         Ok(serde_json::to_value(meeting).unwrap_or_else(|_| json!({})))
     }
 
+    fn meetings_delete(&self, params: &Value) -> Result<Value, EngineError> {
+        let id = req_str(params, "id")?;
+        self.lock_db().delete_meeting(id).map_err(db_err)?;
+        Ok(json!({ "deleted": true }))
+    }
+
+    fn folders_get(&self) -> Result<Value, EngineError> {
+        let raw = self.lock_db().get_blob("folders").map_err(db_err)?;
+        let folders = raw
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .filter(|value| value.is_array())
+            .unwrap_or_else(|| json!([]));
+        Ok(json!({ "folders": folders }))
+    }
+
+    fn folders_set(&self, params: &Value) -> Result<Value, EngineError> {
+        let folders = params.get("folders").cloned().unwrap_or_else(|| json!([]));
+        if !folders.is_array() {
+            return Err(EngineError::new("bad_request", "Folders must be a list."));
+        }
+        let raw = serde_json::to_string(&folders)
+            .map_err(|err| EngineError::new("bad_request", format!("Folders: {err}")))?;
+        if raw.len() > 500_000 {
+            return Err(EngineError::new("bad_request", "That folder list is too large."));
+        }
+        self.lock_db().set_blob("folders", &raw).map_err(db_err)?;
+        Ok(json!({ "folders": folders }))
+    }
+
+    fn mcp_get(&self) -> Result<Value, EngineError> {
+        Ok(json!({ "policy": policy_json(read_mcp_policy(&self.lock_db())) }))
+    }
+
+    fn mcp_set(&self, params: &Value) -> Result<Value, EngineError> {
+        let current = read_mcp_policy(&self.lock_db());
+        let enabled = params.get("enabled").and_then(|value| value.as_bool()).unwrap_or(current.enabled);
+        let transcripts = params
+            .get("transcripts")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(current.transcripts);
+        let actions = params.get("actions").and_then(|value| value.as_bool()).unwrap_or(current.actions);
+        let policy = json!({ "enabled": enabled, "transcripts": transcripts, "actions": actions });
+        let raw = serde_json::to_string(&policy).unwrap_or_else(|_| "{}".to_string());
+        self.lock_db().set_blob("mcp", &raw).map_err(db_err)?;
+        Ok(json!({ "policy": policy }))
+    }
+
     fn utterances_append(&self, params: &Value) -> Result<Value, EngineError> {
         let meeting_id = req_str(params, "meetingId")?;
         let text = req_str(params, "text")?;
@@ -598,7 +650,7 @@ impl Engine {
             return Err(EngineError::new("bad_request", "No audio arrived."));
         }
         let wav = wrap_pcm_wav(&session.pcm, session.sample_rate);
-        let outcome = self.transcribe_module(&module, &wav)?;
+        let outcome = self.transcribe_module(&module, &wav, None)?;
         self.finish_speech(&module.id, outcome)
     }
 
@@ -627,7 +679,8 @@ impl Engine {
             return Err(EngineError::new("bad_request", "That module does not transcribe."));
         }
         let wav = decode_base64(req_str(params, "wavBase64")?)?;
-        let outcome = self.transcribe_module(&module, &wav)?;
+        let language = params.get("language").and_then(|value| value.as_str());
+        let outcome = self.transcribe_module(&module, &wav, language)?;
         Ok(outcome_value(outcome))
     }
 
@@ -652,7 +705,7 @@ impl Engine {
         Ok(json!({ "text": text, "model": model }))
     }
 
-    fn transcribe_module(&self, module: &Module, wav: &[u8]) -> Result<SpeechOutcome, EngineError> {
+    fn transcribe_module(&self, module: &Module, wav: &[u8], language: Option<&str>) -> Result<SpeechOutcome, EngineError> {
         if module.place == "external" {
             return Err(EngineError::new(
                 "use_commit",
@@ -668,7 +721,9 @@ impl Engine {
         let key = self.saved_key(&module.id)?;
         let model = self.model_for(module);
         let base = module.base_url.clone().unwrap_or_default();
-        transcribe_with(&UreqTransport, &module.runtime, &base, &model, &key, wav)
+        let saved = self.current_settings().language;
+        let language = language.unwrap_or(saved.as_str());
+        transcribe_with(&UreqTransport, &module.runtime, &base, &model, &key, wav, language)
     }
 
     fn finish_speech(&self, module_id: &str, outcome: SpeechOutcome) -> Result<Value, EngineError> {
@@ -932,6 +987,48 @@ fn not_ready(module: &Module) -> EngineError {
         "not_ready",
         format!("{} is listed. Its client is not in this build yet.", module.name),
     )
+}
+
+pub fn data_dir() -> PathBuf {
+    data_dir_from_env()
+}
+
+pub fn read_mcp_policy(db: &Db) -> McpPolicy {
+    let raw = db.get_blob("mcp").ok().flatten();
+    let parsed = raw.and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    match parsed {
+        Some(value) => McpPolicy {
+            enabled: value.get("enabled").and_then(|item| item.as_bool()).unwrap_or(true),
+            transcripts: value.get("transcripts").and_then(|item| item.as_bool()).unwrap_or(true),
+            actions: value.get("actions").and_then(|item| item.as_bool()).unwrap_or(true),
+        },
+        None => McpPolicy::default(),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct McpPolicy {
+    pub enabled: bool,
+    pub transcripts: bool,
+    pub actions: bool,
+}
+
+impl Default for McpPolicy {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            transcripts: true,
+            actions: true,
+        }
+    }
+}
+
+fn policy_json(policy: McpPolicy) -> Value {
+    json!({
+        "enabled": policy.enabled,
+        "transcripts": policy.transcripts,
+        "actions": policy.actions,
+    })
 }
 
 fn data_dir_from_env() -> PathBuf {
@@ -1244,5 +1341,32 @@ mod tests {
         let response = engine.handle_line("not json");
         assert_eq!(response["id"], 0);
         assert_eq!(response["ok"], false);
+    }
+
+    #[test]
+    fn meeting_delete_and_folders_roundtrip() {
+        let dir = TempDir::new("desk");
+        let engine = engine(&dir.0);
+        let created = engine.handle_line(
+            r#"{"id":1,"method":"meetings.create","params":{"title":"Pilot","status":"live"}}"#,
+        );
+        assert_eq!(created["ok"], true, "{created}");
+        let id = created["result"]["id"].as_str().unwrap();
+        let appended = engine.handle_line(&format!(
+            r#"{{"id":2,"method":"utterances.append","params":{{"meetingId":"{id}","speaker":"You","text":"Ship the checklist Friday"}}}}"#
+        ));
+        assert_eq!(appended["ok"], true, "{appended}");
+        let folders = engine.handle_line(
+            r#"{"id":3,"method":"folders.set","params":{"folders":[{"id":"f1","name":"Northwind","meetingIds":[]}]}}"#,
+        );
+        assert_eq!(folders["ok"], true, "{folders}");
+        let listed = engine.handle_line(r#"{"id":4,"method":"folders.get","params":{}}"#);
+        assert_eq!(listed["result"]["folders"][0]["name"], "Northwind");
+        let removed = engine.handle_line(&format!(
+            r#"{{"id":5,"method":"meetings.delete","params":{{"id":"{id}"}}}}"#
+        ));
+        assert_eq!(removed["ok"], true, "{removed}");
+        let again = engine.handle_line(r#"{"id":6,"method":"meetings.list","params":{}}"#);
+        assert_eq!(again["result"]["meetings"].as_array().unwrap().len(), 0);
     }
 }

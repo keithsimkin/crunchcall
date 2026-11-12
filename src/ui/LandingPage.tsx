@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { LogoMark } from './icons'
+import { BUY_URL } from './useLicense'
 import './LandingPage.css'
 
 type Surface = 'list' | 'live' | 'settings'
@@ -101,10 +102,10 @@ const plans: {
   {
     id: 'unlock',
     name: 'Unlock',
-    price: 'Once',
-    cadence: 'Microsoft Store',
+    price: '$35',
+    cadence: 'one time',
     blurb: 'The full notepad, including coaching while the call is still open.',
-    cta: 'Open the app',
+    cta: 'Buy the unlock',
     surface: 'list',
     featured: true,
     recommend: 'Recommended if the calls are the job',
@@ -113,7 +114,7 @@ const plans: {
       'Live coaching overlay',
       'Screen-share-safe cues',
       'Markdown export of the notes',
-      'One-time unlock, no subscription',
+      '$35 one-time payment, no subscription',
     ],
   },
   {
@@ -149,6 +150,17 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
   }, [])
 
   useEffect(() => {
+    const id = window.location.hash.replace('#', '')
+    if (!id || id === 'top') return
+    const target = document.getElementById(id)
+    if (!target) return
+    const nav = document.querySelector<HTMLElement>('.lp-navwrap')
+    const clearance = (nav?.getBoundingClientRect().height ?? 80) + 20
+    const top = Math.max(0, window.scrollY + target.getBoundingClientRect().top - clearance)
+    window.scrollTo({ top, behavior: 'auto' })
+  }, [])
+
+  useEffect(() => {
     if (!arrived) return
     const timer = window.setTimeout(() => setArrived(null), 1800)
     return () => window.clearTimeout(timer)
@@ -166,7 +178,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
     const pageScrolls = document.documentElement.scrollHeight > window.innerHeight + 2
     if (pageScrolls) window.scrollTo({ top, behavior })
     else target.scrollIntoView({ behavior, block: 'start' })
-    if (id === 'coaching' || id === 'notes') {
+    if (id === 'coaching' || id === 'notes' || id === 'product') {
       setArrived(null)
       window.requestAnimationFrame(() => setArrived(id))
     }
@@ -186,7 +198,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
             }}
           >
             <LogoMark />
-            CrunchCall
+            annotated
           </a>
           <button
             type="button"
@@ -205,34 +217,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                 go('product')
               }}
             >
-              Product
-            </a>
-            <a
-              href="#coaching"
-              onClick={(event) => {
-                event.preventDefault()
-                go('coaching')
-              }}
-            >
-              Coaching
-            </a>
-            <a
-              href="#notes"
-              onClick={(event) => {
-                event.preventDefault()
-                go('notes')
-              }}
-            >
-              Notes
-            </a>
-            <a
-              href="#compare"
-              onClick={(event) => {
-                event.preventDefault()
-                go('compare')
-              }}
-            >
-              Compare
+              Coaching & notes
             </a>
             <a
               href="#pricing"
@@ -254,7 +239,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
         <section className="lp-hero" id="top">
           <div className="lp-narrow">
             <h1>
-              Crunch every call.
+              Annotate every call.
               <br />
               Keep the notes.
               <br />
@@ -284,71 +269,14 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
           <div className="lp-scene">
             <img src="/landing/moss-hero.jpg" alt="" />
             <div className="lp-device-wrap">
-              <figure className="lp-device">
-                <div className="lp-device-chrome" aria-hidden="true">
-                  <span className="lp-dots">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                  <span className="lp-chrome-brand">
-                    <LogoMark size={16} />
-                    CrunchCall
-                  </span>
-                  <span className="lp-live-pill">
-                    <i className="lp-dot" />
-                    Live
-                  </span>
-                </div>
-                <div className="lp-device-body" aria-hidden="true">
-                  <aside>
-                    <p className="lp-device-brand">
-                      <LogoMark />
-                      CrunchCall
-                    </p>
-                    <p className="on">Home</p>
-                    <p>Live</p>
-                    <p>Settings</p>
-                    <div className="lp-device-note">
-                      <strong>Connect</strong>
-                      <span>Claude, Cursor, and others can read notes. Local and read-only.</span>
-                    </div>
-                  </aside>
-                  <div className="lp-device-main">
-                    <header>
-                      <div>
-                        <strong>Product sync</strong>
-                        <span>Live · Speakers (loopback)</span>
-                      </div>
-                      <em>18:42</em>
-                    </header>
-                    <div className="lp-device-grid">
-                      <div className="lp-transcript">
-                        <p className="lp-device-label">Transcript</p>
-                        <p>
-                          <b>You</b>
-                          <span>I’ll take Teams. Priya has Zoom. We still need a date.</span>
-                        </p>
-                        <p>
-                          <b>Priya</b>
-                          <span>What model size did we pick? And is tiny enough for a first run?</span>
-                        </p>
-                        <p>
-                          <b>Jon</b>
-                          <span>The next step is the share test, but we have not named a day.</span>
-                        </p>
-                      </div>
-                      <div className="lp-cue">
-                        <p className="lp-device-label">Live cue</p>
-                        <strong>Missing date</strong>
-                        <span>Jon named the share test without a day. Ask for one before you leave.</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              <figure className="lp-viewport">
+                <img
+                  src="/landing/shot-hero.png?v=home"
+                  alt="annotated on Home, the meeting history on this PC, in a Windows window."
+                />
                 <figcaption className="lp-sr">
-                  Preview of CrunchCall during a live product sync. The transcript stays on this PC, and a live cue
-                  asks for a day on the share test.
+                  annotated on Home. Meeting history stays on this PC. The window has the Windows minimize, maximize,
+                  and close buttons.
                 </figcaption>
               </figure>
             </div>
@@ -376,10 +304,10 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
         <section className="lp-about" aria-labelledby="about-title">
           <Kicker>About</Kicker>
           <h2 id="about-title" className="lp-sr">
-            About CrunchCall
+            About annotated
           </h2>
           <p>
-            CrunchCall helps you leave a meeting with the notes, the owners, and the next step. No bot joins Zoom,
+            annotated helps you leave a meeting with the notes, the owners, and the next step. No bot joins Zoom,
             Meet, or Teams. Transcription and the first summary run on this PC. A bigger model is optional, and it
             only ever sees text.
           </p>
@@ -393,8 +321,8 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
               <span>On-device by default</span>
             </article>
             <article>
-              <strong>Once</strong>
-              <span>Pay for the unlock, not monthly</span>
+              <strong>$35</strong>
+              <span>One-time payment, not monthly</span>
             </article>
           </div>
         </section>
@@ -408,7 +336,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
           <div className="lp-feature-scene">
             <div className="lp-feature-grid">
               <article
-                className={arrived === 'coaching' ? 'lp-feature-card is-arrived' : 'lp-feature-card'}
+                className={arrived === 'coaching' || arrived === 'product' ? 'lp-feature-card is-arrived' : 'lp-feature-card'}
                 id="coaching"
               >
                 <h3>Live coaching</h3>
@@ -417,56 +345,24 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                   something about it. Hidden from screen share.
                 </p>
                 <div className="lp-shot">
-                  <div className="lp-widget">
-                    <header>
-                      <strong>Live cues</strong>
-                      <em>Live</em>
-                    </header>
-                    <ul>
-                      <li>
-                        <b>Missing date</b>
-                        <span>Jon named the share test without a day. Ask for one before you leave.</span>
-                      </li>
-                      <li>
-                        <b>Stacked questions</b>
-                        <span>Priya asked two in a row. Leave a beat.</span>
-                      </li>
-                      <li>
-                        <b>Talk ratio</b>
-                        <span>You have had the floor for most of the last minute.</span>
-                      </li>
-                    </ul>
-                  </div>
+                  <img
+                    src="/landing/shot-live-call.png?v=light"
+                    alt="Live Product sync in annotated: the transcript, a paused timer, and the cues panel."
+                  />
                 </div>
               </article>
 
-              <article className={arrived === 'notes' ? 'lp-feature-card is-arrived' : 'lp-feature-card'} id="notes">
+              <article className={arrived === 'notes' || arrived === 'product' ? 'lp-feature-card is-arrived' : 'lp-feature-card'} id="notes">
                 <h3>Notes that land</h3>
                 <p>
                   Summary, owners, and due dates, searchable on this PC. Export Markdown when you want to share the
                   notes, not the whole transcript.
                 </p>
                 <div className="lp-shot">
-                  <div className="lp-widget">
-                    <header>
-                      <strong>Pricing review with Northwind</strong>
-                      <em className="ready">Ready</em>
-                    </header>
-                    <ul className="lp-actions">
-                      <li>
-                        <b>Send the three-tier deck</b>
-                        <span>Maya · Fri</span>
-                      </li>
-                      <li>
-                        <b>Confirm whether annual is in the pilot</b>
-                        <span>You · Thu</span>
-                      </li>
-                      <li>
-                        <b>Book the security questionnaire follow-up</b>
-                        <span>No owner yet</span>
-                      </li>
-                    </ul>
-                  </div>
+                  <img
+                    src="/landing/shot-notes.png?v=light"
+                    alt="Notes for Pricing review with Northwind: summary, takeaways, and next steps with owners and due dates."
+                  />
                 </div>
               </article>
             </div>
@@ -505,7 +401,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                   <th scope="col">
                     <span className="lp-sr">Point of comparison</span>
                   </th>
-                  <BrandHead name="CrunchCall" us />
+                  <BrandHead name="annotated" us />
                   <BrandHead name="Granola" src="/logos/granola.png" />
                   <BrandHead name="Otter" src="/logos/otter.svg" />
                   <BrandHead name="Fireflies" src="/logos/fireflies.svg" />
@@ -547,7 +443,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                 </tr>
                 <tr>
                   <th scope="row">How you pay</th>
-                  <td className="is-us">Once</td>
+                  <td className="is-us">$35 once</td>
                   <td>Subscription</td>
                   <td>Subscription</td>
                   <td>Subscription</td>
@@ -566,7 +462,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
           <Kicker>Pricing</Kicker>
           <h2 id="pricing-title">A notepad you buy once.</h2>
           <p className="lp-sub">
-            Local notes need no account. The coaching overlay is a one-time Microsoft Store unlock.
+            Local notes need no account. Coaching and Markdown export are a $35 one-time payment. The installer is signed, and the app checks the license on this PC.
           </p>
           <div className="lp-plans">
             {plans.map((plan) => (
@@ -575,15 +471,20 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                 <h3>{plan.name}</h3>
                 <p className="lp-price">
                   {plan.price}
-                  <small>
-                    {plan.id === 'unlock' ? (
-                      <img className="lp-inline-logo" src="/logos/microsoft.svg" alt="" />
-                    ) : null}
-                    {plan.cadence}
-                  </small>
+                  <small>{plan.cadence}</small>
                 </p>
                 <p className="lp-plan-blurb">{plan.blurb}</p>
-                <button type="button" className="lp-btn lp-plan-cta" onClick={() => onOpenApp(plan.surface)}>
+                <button
+                  type="button"
+                  className="lp-btn lp-plan-cta"
+                  onClick={() => {
+                    if (plan.id === 'unlock') {
+                      window.open(BUY_URL, '_blank', 'noopener,noreferrer')
+                      return
+                    }
+                    onOpenApp(plan.surface)
+                  }}
+                >
                   {plan.cta}
                 </button>
                 <p className="lp-youget">You get</p>
@@ -607,7 +508,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
             <div>
               <p className="lp-footer-brand">
                 <LogoMark />
-                CrunchCall
+                annotated
               </p>
               <p>
                 A local-first meeting notepad for Windows. No bot joins the call. Notes stay on this PC unless you
@@ -629,34 +530,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                   go('product')
                 }}
               >
-                Capabilities
-              </a>
-              <a
-                href="#coaching"
-                onClick={(event) => {
-                  event.preventDefault()
-                  go('coaching')
-                }}
-              >
-                Live coaching
-              </a>
-              <a
-                href="#notes"
-                onClick={(event) => {
-                  event.preventDefault()
-                  go('notes')
-                }}
-              >
-                Notes
-              </a>
-              <a
-                href="#compare"
-                onClick={(event) => {
-                  event.preventDefault()
-                  go('compare')
-                }}
-              >
-                Compare
+                Coaching & notes
               </a>
               <a
                 href="#pricing"
@@ -721,15 +595,17 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
             </div>
           </div>
           <div className="lp-footer-base">
-            <p>© 2026 CrunchCall</p>
+            <p>
+              © 2026 annotated · <a href="https://annotated.click">annotated.click</a>
+            </p>
             <p>Windows-first · Local by default</p>
           </div>
         </div>
       </footer>
 
-      <section className="lp-wordmark" aria-label="CrunchCall">
+      <section className="lp-wordmark" aria-label="annotated">
         <img src="/landing/moss-wordmark.jpg" alt="" />
-        <strong>CrunchCall</strong>
+        <strong>annotated</strong>
       </section>
     </div>
   )

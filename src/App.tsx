@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { CalendarEvent } from './features/calendar/ics'
-import { dismiss, getState, onCalendarStart, resetCalendar, setActiveMeeting } from './features/calendar/store'
+import { dismiss, onCalendarStart, resetCalendar, setActiveMeeting } from './features/calendar/store'
 import { clearDeskStorage } from './lib/storage'
-import { freshMeeting, listedMeetings, starterProjects, type MeetingRow, type ProjectAccent, type ProjectFolder } from './ui/fixtures'
-import { CalendarIcon, FolderIcon, GearIcon, HomeIcon, LiveIcon, LogoMark, MicIcon, PlugIcon, ShortcutIcon } from './ui/icons'
+import { setIndexedNotes } from './features/desk/notesIndex'
+import { deleteMeeting, loadDesk, saveFolders } from './features/desk/store'
+import type { MeetingRow, ProjectAccent, ProjectFolder } from './ui/fixtures'
+import { CalendarIcon, DownloadIcon, FolderIcon, GearIcon, HomeIcon, LiveIcon, LogoMark, MicIcon, PlugIcon, ShortcutIcon } from './ui/icons'
 import { CalendarScreen } from './ui/CalendarScreen'
 import { McpScreen } from './ui/McpScreen'
 import { ProjectsScreen } from './ui/ProjectsScreen'
@@ -12,12 +14,13 @@ import { emptyProfile, profileInitials, readProfile, writeProfile, type Profile 
 import { SettingsDialog } from './ui/SettingsScreen'
 import { ShortcutsScreen } from './ui/ShortcutsScreen'
 import { useSettingsState, type SettingsSection } from './ui/settingsState'
-import { UpdatePrompt } from './ui/UpdatePrompt'
+import { useLicense } from './ui/useLicense'
 import { useUpdates } from './ui/useUpdates'
 import type { AskFocus } from './features/ask/context'
 import { DictatePopup } from './ui/DictatePopup'
 import { DictateScreen } from './ui/DictateScreen'
 import { FloatingAsk } from './ui/FloatingAsk'
+import { LandingPage } from './ui/LandingPage'
 import { LiveScreen } from './ui/LiveScreen'
 import { MeetingsScreen, StartAsk } from './ui/MeetingsScreen'
 import { NotesScreen } from './ui/NotesScreen'
@@ -26,7 +29,7 @@ import './App.css'
 
 type View =
   | { name: 'list' }
-  | { name: 'live'; fresh: boolean; title?: string; instanceKey?: string }
+  | { name: 'live'; fresh: boolean; title?: string; instanceKey?: string; meetingId?: string }
   | { name: 'dictate' }
   | { name: 'notes'; id: string }
   | { name: 'calendar' }
@@ -58,10 +61,13 @@ function askFocusFor(view: View): AskFocus {
 }
 
 export default function App() {
-  const [rows, setRows] = useState<MeetingRow[]>(() => listedMeetings.map((meeting) => ({ ...meeting })))
-  const [folders, setFolders] = useState<ProjectFolder[]>(() => starterProjects.map((folder) => ({ ...folder, meetingIds: [...folder.meetingIds] })))
+  const [rows, setRows] = useState<MeetingRow[]>([])
+  const [notesById, setNotesById] = useState<Record<string, import('./ui/fixtures').RichNotes>>({})
+  const [folders, setFolders] = useState<ProjectFolder[]>([])
+  const [deskReady, setDeskReady] = useState(false)
   const [view, setView] = useState<View>({ name: 'list' })
   const settings = useSettingsState()
+  const license = useLicense()
   const update = useUpdates()
   const { calendar, upcoming, due, now } = useCalendarClock()
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null)
@@ -70,6 +76,12 @@ export default function App() {
   const [setupOpen, setSetupOpen] = useState(() => !readProfile().onboarded)
   const [searchNonce, setSearchNonce] = useState(0)
   const [dictateOpen, setDictateOpen] = useState(false)
+  const [noteJump, setNoteJump] = useState<{ meetingId: string; utteranceId?: string; nonce: number } | null>(null)
+  const [marketing, setMarketing] = useState(() => {
+    if (typeof window === 'undefined') return false
+    if (window.crunchcall) return false
+    return window.location.hash !== '#app'
+  })
   const desktop = typeof window !== 'undefined' && Boolean(window.crunchcall)
   const person = profile.name.trim()
 
@@ -79,19 +91,34 @@ export default function App() {
   }, [desktop, settings.resolvedTheme])
 
   useEffect(() => {
-    // The app is the only surface, so keep the app hash even when the window
-    // was opened at the bare root or a stale marketing URL.
+    // The desktop window opens on the app. A browser without #app gets the
+    // marketing page, and Open the app moves into the product.
+    if (!window.crunchcall) return
     if (window.location.hash !== '#app') history.replaceState({ surface: 'app' }, '', '#app')
   }, [])
 
   useEffect(() => {
-    return onCalendarStart((instanceKey) => {
-      const event = getState().events.find((item) => item.instanceKey === instanceKey)
-      if (!event) return
-      dismiss(event.instanceKey)
+    const api = window.crunchcall
+    if (!api?.onAppCommand) return
+    return api.onAppCommand((command) => {
+      if (command === 'updates') return
+      if (setupOpen) return
+      setMarketing(false)
+      setSettingsOpen(command === 'settings' ? 'listening' : null)
+      if (window.location.hash !== '#app') history.pushState({ surface: 'app' }, '', '#app')
+      if (command === 'dashboard') setView({ name: 'list' })
+      else if (command === 'meeting') setView({ name: 'live', fresh: true })
+      else if (command === 'calendar') setView({ name: 'calendar' })
+      else if (command === 'projects') setView({ name: 'projects' })
+    })
+  }, [setupOpen])
+
+  useEffect(() => {
+    return onCalendarStart(() => {
+      setMarketing(false)
       setSettingsOpen(null)
       if (window.location.hash !== '#app') history.pushState({ surface: 'app' }, '', '#app')
-      setView({ name: 'live', fresh: true, title: event.title, instanceKey: event.instanceKey })
+      setView((current) => (current.name === 'live' ? current : { name: 'list' }))
     })
   }, [])
 
@@ -102,11 +129,16 @@ export default function App() {
   useEffect(() => {
     function onPop() {
       setSettingsOpen(null)
+      if (!desktop && window.location.hash !== '#app') {
+        setMarketing(true)
+        return
+      }
+      setMarketing(false)
       setView({ name: 'list' })
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
-  }, [])
+  }, [desktop])
 
   function saveProfile(next: Profile) {
     const saved = { ...next, name: next.name.slice(0, 48), onboarded: profile.onboarded }
@@ -129,15 +161,41 @@ export default function App() {
     setSetupOpen(true)
   }
 
-  function restoreApp() {
+  async function refreshDesk() {
+    const desk = await loadDesk()
+    setRows(desk.rows)
+    setNotesById(desk.notes)
+    setFolders(desk.folders)
+    setIndexedNotes(desk.notes)
+    setDeskReady(true)
+  }
+
+  useEffect(() => {
+    void refreshDesk()
+  }, [])
+
+  useEffect(() => {
+    setIndexedNotes(notesById)
+  }, [notesById])
+
+  useEffect(() => {
+    if (!deskReady) return
+    void saveFolders(folders)
+  }, [folders, deskReady])
+
+  async function restoreApp() {
     settings.reset()
     resetCalendar()
     clearDeskStorage()
+    const desk = await loadDesk()
+    for (const row of desk.rows) await deleteMeeting(row.id)
+    await saveFolders([])
     const blank = emptyProfile()
     writeProfile(blank)
     setProfile(blank)
-    setRows(listedMeetings.map((meeting) => ({ ...meeting })))
-    setFolders(starterProjects.map((folder) => ({ ...folder, meetingIds: [...folder.meetingIds] })))
+    setRows([])
+    setNotesById({})
+    setFolders([])
     setSettingsOpen(null)
     setView({ name: 'list' })
     setSetupOpen(true)
@@ -147,7 +205,25 @@ export default function App() {
     const meeting = rows.find((item) => item.id === id)
     if (!meeting) return
     setSettingsOpen(null)
-    setView(meeting.status === 'live' ? { name: 'live', fresh: false } : { name: 'notes', id })
+    setNoteJump(null)
+    setView(
+      meeting.status === 'live'
+        ? { name: 'live', fresh: false, title: meeting.title, meetingId: meeting.id }
+        : { name: 'notes', id },
+    )
+  }
+
+  function openFromAsk(meetingId: string, utteranceId?: string) {
+    const meeting = rows.find((item) => item.id === meetingId)
+    if (!meeting) return
+    setSettingsOpen(null)
+    if (meeting.status === 'live') {
+      setNoteJump(null)
+      setView({ name: 'live', fresh: false, title: meeting.title, meetingId: meeting.id })
+      return
+    }
+    setNoteJump({ meetingId, utteranceId, nonce: Date.now() })
+    setView({ name: 'notes', id: meetingId })
   }
 
   function fileMeeting(meetingId: string, folderId: string) {
@@ -177,7 +253,12 @@ export default function App() {
   }
 
   function openLive() {
-    setView({ name: 'live', fresh: !rows.some((item) => item.status === 'live') })
+    const live = rows.find((item) => item.status === 'live')
+    setView(
+      live
+        ? { name: 'live', fresh: false, title: live.title, meetingId: live.id }
+        : { name: 'live', fresh: false },
+    )
   }
 
   useEffect(() => {
@@ -193,7 +274,7 @@ export default function App() {
     }
 
     function onKey(event: KeyboardEvent) {
-      if (setupOpen) return
+      if (setupOpen || marketing) return
       if (event.defaultPrevented || event.altKey || event.metaKey) return
       const key = event.key.toLowerCase()
 
@@ -234,7 +315,8 @@ export default function App() {
         '1': () => go({ name: 'list' }),
         '2': () => {
           setSettingsOpen(null)
-          setView({ name: 'live', fresh: !rows.some((item) => item.status === 'live') })
+          const live = rows.find((item) => item.status === 'live')
+          setView({ name: 'live', fresh: !live, title: live?.title, meetingId: live?.id })
         },
         '3': () => go({ name: 'dictate' }),
         '4': () => {
@@ -254,42 +336,32 @@ export default function App() {
 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [rows, setupOpen])
+  }, [rows, setupOpen, marketing])
 
-  function removeMeeting(id: string) {
+  async function removeMeeting(id: string) {
+    await deleteMeeting(id)
     setRows((current) => current.filter((item) => item.id !== id))
+    setFolders((current) => current.map((folder) => ({ ...folder, meetingIds: folder.meetingIds.filter((item) => item !== id) })))
     if (view.name === 'notes' && view.id === id) setView({ name: 'list' })
   }
 
   function beginFromCalendar(event: CalendarEvent, fromPrompt: boolean) {
     if (fromPrompt) dismiss(event.instanceKey)
+    setMarketing(false)
     setSettingsOpen(null)
     if (window.location.hash !== '#app') history.pushState({ surface: 'app' }, '', '#app')
     setView({ name: 'live', fresh: true, title: event.title, instanceKey: event.instanceKey })
   }
 
-  function endLive(fresh: boolean) {
-    const title = view.name === 'live' ? view.title : undefined
-    if (fresh) {
-      setRows((current) => [freshMeeting(title), ...current.filter((item) => item.id !== 'fresh-session')])
-      setView({ name: 'notes', id: 'fresh-session' })
-      return
-    }
-    setRows((current) =>
-      current.map((item) =>
-        item.id === 'live-product'
-          ? {
-              ...item,
-              status: 'processing',
-              when: 'Just now',
-              duration: '18:42',
-              preview: 'Crunching notes on this PC…',
-            }
-          : item,
-      ),
-    )
-    setView({ name: 'notes', id: 'live-product' })
+  function openFromLanding(next?: 'list' | 'live' | 'settings') {
+    if (window.location.hash !== '#app') history.pushState({ surface: 'app' }, '', '#app')
+    setMarketing(false)
+    setSettingsOpen(next === 'settings' ? 'listening' : null)
+    if (next === 'live') setView({ name: 'live', fresh: true })
+    else setView({ name: 'list' })
   }
+
+  if (marketing) return <LandingPage onOpenApp={openFromLanding} />
 
   const section: Section =
     view.name === 'live' ||
@@ -314,7 +386,7 @@ export default function App() {
           }}
         >
           <LogoMark />
-          <span>CrunchCall</span>
+          <span>annotated</span>
         </button>
         <nav className="nav" aria-label="Primary">
           <button
@@ -386,6 +458,7 @@ export default function App() {
           </button>
         </nav>
         <div className="side-foot">
+          <div className={update.ready ? 'foot-connect has-update' : 'foot-connect'}>
           <button
             type="button"
             className="local-card connect-card"
@@ -401,9 +474,24 @@ export default function App() {
             </span>
             <p>Claude, Cursor, and others can read notes. Local and read-only.</p>
           </button>
-          {update.showPrompt && update.phase === 'available' ? (
-            <UpdatePrompt latest={update.latest} onOpen={update.open} onDismiss={update.dismiss} />
+          {update.ready ? (
+            <button
+              type="button"
+              className="update-download"
+              onClick={update.install}
+              disabled={update.phase === 'downloading' || update.phase === 'downloaded'}
+            >
+              <DownloadIcon />
+              <span>
+                {update.phase === 'downloading'
+                  ? `Downloading ${update.percent}%`
+                  : update.phase === 'downloaded'
+                    ? 'Installing…'
+                    : 'Download update'}
+              </span>
+            </button>
           ) : null}
+          </div>
           <div className="whoami">
             <span className="avatar" aria-hidden="true">
               {person ? profileInitials(person) : 'C'}
@@ -451,7 +539,7 @@ export default function App() {
             calendarOn={calendar.enabled}
             calendarError={calendar.error}
             calendarEmpty={
-              calendar.source ? 'Nothing coming up in the next two weeks.' : 'Add a calendar link under Calendar.'
+              calendar.source ? 'Nothing coming up in the next two weeks.' : 'Connect Google or Outlook under Calendar, or add a private link.'
             }
             upcoming={upcoming}
             due={due}
@@ -462,10 +550,27 @@ export default function App() {
         ) : null}
         {view.name === 'live' ? (
           <LiveScreen
-            fresh={view.fresh}
+            key={view.fresh ? `start-${view.instanceKey ?? view.title ?? 'new'}` : (view.meetingId ?? 'idle')}
             title={view.title}
-            onBack={() => setView({ name: 'list' })}
-            onEnd={() => endLive(view.fresh)}
+            meetingId={view.meetingId}
+            autoStart={view.fresh}
+            speechId={settings.speechId}
+            writerId={settings.writerId}
+            coachId={settings.coachId}
+            inputDevice={settings.input}
+            language={settings.language}
+            showCues={settings.showCues}
+            cues={settings.cues}
+            unlocked={license.unlocked}
+            onUnlock={() => setSettingsOpen('license')}
+            hasWriterKey={Boolean(settings.savedKeys[settings.writerId])}
+            onBack={() => {
+              void refreshDesk()
+              setView({ name: 'list' })
+            }}
+            onFinished={(id) => {
+              void refreshDesk().then(() => setView({ name: 'notes', id }))
+            }}
           />
         ) : null}
         {view.name === 'dictate' ? <DictateScreen speechId={settings.speechId} /> : null}
@@ -473,11 +578,18 @@ export default function App() {
           <NotesScreen
             key={notesMeeting.id}
             meeting={notesMeeting}
+            notes={notesById[notesMeeting.id] ?? null}
+            writerId={settings.writerId}
+            hasWriterKey={Boolean(settings.savedKeys[settings.writerId])}
+            unlocked={license.unlocked}
+            onUnlock={() => setSettingsOpen('license')}
             folders={folders}
             folderId={folders.find((folder) => folder.meetingIds.includes(notesMeeting.id))?.id ?? ''}
             onFile={(folderId) => fileMeeting(notesMeeting.id, folderId)}
             onBack={() => setView({ name: 'list' })}
             onStart={() => setView({ name: 'live', fresh: true })}
+            jumpNonce={noteJump && noteJump.meetingId === notesMeeting.id ? noteJump.nonce : 0}
+            jumpLine={noteJump && noteJump.meetingId === notesMeeting.id ? noteJump.utteranceId : undefined}
           />
         ) : null}
         {view.name === 'calendar' ? <CalendarScreen onStart={(event) => beginFromCalendar(event, false)} /> : null}
@@ -521,11 +633,11 @@ export default function App() {
           onName={(value) => saveProfile({ ...profile, name: value })}
           onRunSetup={runSetup}
           onRestore={restoreApp}
+          license={license}
           onOpenHelp={() => {
             setSettingsOpen(null)
             setView({ name: 'shortcuts' })
           }}
-          update={update}
         />
       ) : null}
       {setupOpen ? (
@@ -554,6 +666,7 @@ export default function App() {
           userName={person}
           hidden={settingsOpen !== null}
           onOpenSettings={setSettingsOpen}
+          onOpenMeeting={openFromAsk}
         />
       ) : null}
     </div>

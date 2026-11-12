@@ -1,0 +1,25 @@
+appId: click.annotated.desktop
+productName: annotated
+directories:
+  output: release
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+  - "!electron/oauth.local.json"
+  - "!electron/**/*.test.mjs"
+asar: true
+publish:
+  provider: github
+  owner: keithsimkin
+  repo: crunchcall
+win:
+  icon: electron/icon.ico
+  # CSC_LINK and CSC_KEY_PASSWORD sign the installer. electron-updater then
+  # rejects an update whose Authenticode publisher does not match this build.
+  target:
+    - nsis
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false

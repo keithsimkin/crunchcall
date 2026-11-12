@@ -26,7 +26,7 @@ export async function callEngine(
 function friendlyEngineError(error: unknown): string {
   const raw = error instanceof Error ? error.message : 'The engine call failed.'
   if (raw.includes('No handler registered')) {
-    return 'The desktop app is still on the previous engine. Quit CrunchCall and open it again.'
+    return 'The desktop app is still on the previous engine. Quit annotated and open it again.'
   }
   return raw
 }

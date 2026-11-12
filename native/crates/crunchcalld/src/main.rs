@@ -2,7 +2,13 @@ use std::io::{self, BufRead, Write};
 
 use crunchcall_engine::Engine;
 
+mod mcp;
+
 fn main() {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some("mcp") {
+        std::process::exit(mcp::serve());
+    }
     let engine = match Engine::open_default() {
         Ok(engine) => engine,
         Err(err) => {

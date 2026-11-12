@@ -361,6 +361,14 @@ impl Db {
         Ok(meeting)
     }
 
+    pub fn delete_meeting(&self, id: &str) -> Result<(), DbError> {
+        self.require_meeting(id)?;
+        self.conn
+            .execute("DELETE FROM utterance_fts WHERE meeting_id = ?1", [id])?;
+        self.conn.execute("DELETE FROM meetings WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
     pub fn append_utterance(
         &self,
         meeting_id: &str,
@@ -586,6 +594,27 @@ impl Db {
             Some(raw) => Ok(Some(serde_json::from_str(&raw)?)),
             None => Ok(None),
         }
+    }
+
+    pub fn get_blob(&self, key: &str) -> Result<Option<String>, DbError> {
+        let raw: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = ?1",
+                [key],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(raw)
+    }
+
+    pub fn set_blob(&self, key: &str, value: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
     }
 
     pub fn set_settings(&self, settings: &Settings) -> Result<(), DbError> {

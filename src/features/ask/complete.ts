@@ -1,6 +1,7 @@
 import { callEngine, engineAvailable } from '../engines/call'
 import { engineById } from '../engines/catalog'
 import { buildAskPack, localAskReply, type AskFocus } from './context'
+import { emptyAskTags, meetingsForTags, type AskTags } from './mentions'
 import { pullsForAsk, type AskPull } from './pulls'
 import type { CalendarEvent } from '../calendar/ics'
 import type { MeetingRow, ProjectFolder } from '../../ui/fixtures'
@@ -31,15 +32,19 @@ export async function completeAsk(input: {
   rows: MeetingRow[]
   folders: ProjectFolder[]
   upcoming: CalendarEvent[]
-  taggedMeetingIds?: string[]
+  tags?: AskTags
 }): Promise<AskCompleteResult> {
   const question = input.question.trim()
+  const tags = input.tags ?? emptyAskTags()
+  const taggedMeetingIds = [
+    ...new Set([...tags.meetingIds, ...meetingsForTags(tags, input.rows, input.folders).map((row) => row.id)]),
+  ]
   const pulls = question
     ? pullsForAsk({
         question,
         rows: input.rows,
         focus: input.focus,
-        taggedMeetingIds: input.taggedMeetingIds,
+        taggedMeetingIds,
       })
     : []
   if (!question) return { ok: false, message: 'Type a question first.', pulls }
@@ -51,13 +56,13 @@ export async function completeAsk(input: {
     rows: input.rows,
     folders: input.folders,
     upcoming: input.upcoming,
-    taggedMeetingIds: input.taggedMeetingIds,
+    tags,
   })
 
-  if (!engineAvailable()) {
+  if (!engineAvailable() || (writer && writer.where === 'local' && !writer.clientReady)) {
     return {
       ok: true,
-      text: localAskReply(question, input.rows, input.folders, input.focus),
+      text: localAskReply(question, input.rows, input.folders, input.focus, tags),
       source: 'local',
       pulls,
     }

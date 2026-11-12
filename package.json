@@ -1,8 +1,9 @@
 {
-  "name": "crunchcall",
+  "name": "annotated",
   "private": true,
   "version": "0.1.0",
-  "description": "CrunchCall — crunch every call. Local-first AI notepad for meetings.",
+  "description": "annotated — local-first AI notepad for meetings.",
+  "homepage": "https://annotated.click",
   "repository": {
     "type": "git",
     "url": "https://github.com/keithsimkin/crunchcall"
@@ -13,11 +14,15 @@
     "dev": "vite",
     "desktop": "electron .",
     "build": "tsc -b && vite build",
+    "desktop:pack": "bun run build && electron-builder --win",
+    "license:issue": "bun licensing/issue.mjs",
+    "license:serve": "bun licensing/server.mjs",
     "lint": "oxlint",
     "mcp": "bun mcp/server.ts",
     "preview": "vite preview"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
@@ -27,6 +32,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "electron": "^45.3.1",
+    "electron-builder": "^26.18.0",
     "oxlint": "^1.90.0",
     "typescript": "~7.0.2",
     "vite": "^8.3.6"

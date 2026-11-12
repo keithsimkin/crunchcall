@@ -1,29 +1,61 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { richNotes, initials, type MeetingRow, type NoteAsk, type ProjectFolder } from './fixtures'
+import { completeAsk } from '../features/ask/complete'
+import { initials, type MeetingRow, type NoteAsk, type ProjectFolder, type RichNotes } from './fixtures'
 
 type NotesScreenProps = {
   meeting: MeetingRow
+  notes: RichNotes | null
+  writerId: string
+  hasWriterKey: boolean
+  unlocked: boolean
+  onUnlock: () => void
   folders: ProjectFolder[]
   folderId: string
   onFile: (folderId: string) => void
   onBack: () => void
   onStart: () => void
+  /** Changes when Ask opens this meeting. `jumpLine` is the transcript row to show. */
+  jumpNonce?: number
+  jumpLine?: string
 }
 
-export function NotesScreen({ meeting, folders, folderId, onFile, onBack, onStart }: NotesScreenProps) {
-  const notes = richNotes[meeting.id]
-  const [tab, setTab] = useState<'notes' | 'transcript'>('notes')
+export function NotesScreen({
+  meeting,
+  notes,
+  writerId,
+  hasWriterKey,
+  unlocked,
+  onUnlock,
+  folders,
+  folderId,
+  onFile,
+  onBack,
+  onStart,
+  jumpNonce = 0,
+  jumpLine,
+}: NotesScreenProps) {
+  const [tab, setTab] = useState<'notes' | 'transcript'>(jumpLine ? 'transcript' : 'notes')
   const [checked, setChecked] = useState<Set<string>>(() => new Set())
   const [messages, setMessages] = useState<NoteAsk[]>(() => notes?.ask ?? [])
   const [draft, setDraft] = useState('')
   const [copied, setCopied] = useState(false)
-  const [highlight, setHighlight] = useState<string | null>(null)
+  const [highlight, setHighlight] = useState<string | null>(jumpLine ?? null)
 
   useEffect(() => {
     if (!copied) return
     const timer = window.setTimeout(() => setCopied(false), 1600)
     return () => window.clearTimeout(timer)
   }, [copied])
+
+  useEffect(() => {
+    if (!jumpNonce) return
+    if (jumpLine) {
+      setTab('transcript')
+      setHighlight(jumpLine)
+      return
+    }
+    setTab('notes')
+  }, [jumpNonce, jumpLine])
 
   useEffect(() => {
     if (!highlight || tab !== 'transcript') return
@@ -54,13 +86,28 @@ export function NotesScreen({ meeting, folders, folderId, onFile, onBack, onStar
     setHighlight(utteranceId)
   }
 
-  function sendAsk(event: FormEvent<HTMLFormElement>) {
+  async function sendAsk(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const text = draft.trim()
     if (!text || !notes) return
-    const reply: NoteAsk = { ...notes.sampleReply, id: `reply-${messages.length}` }
-    setMessages((current) => [...current, { id: `ask-${messages.length}`, role: 'user', text }, reply])
+    const askId = `ask-${messages.length}`
+    setMessages((current) => [...current, { id: askId, role: 'user', text }])
     setDraft('')
+    const result = await completeAsk({
+      question: text,
+      writerId,
+      hasWriterKey,
+      focus: { page: 'notes', meetingId: meeting.id },
+      rows: [meeting],
+      folders,
+      upcoming: [],
+    })
+    const reply: NoteAsk = {
+      id: `reply-${askId}`,
+      role: 'assistant',
+      text: result.ok ? result.text : result.message,
+    }
+    setMessages((current) => [...current, reply])
   }
 
   return (
@@ -108,9 +155,14 @@ export function NotesScreen({ meeting, folders, folderId, onFile, onBack, onStar
           <button type="button" className="btn ghost" onClick={onBack}>
             Meetings
           </button>
-          {notes ? (
+          {notes && unlocked ? (
             <button type="button" className="btn primary" onClick={() => void copyMarkdown()}>
               {copied ? 'Copied' : 'Copy Markdown'}
+            </button>
+          ) : null}
+          {notes && !unlocked ? (
+            <button type="button" className="btn ghost" onClick={onUnlock}>
+              Unlock to copy
             </button>
           ) : null}
         </div>
@@ -119,7 +171,7 @@ export function NotesScreen({ meeting, folders, folderId, onFile, onBack, onStar
       {meeting.status === 'draft' ? (
         <div className="state-card">
           <h2>Nothing captured yet</h2>
-          <p>Start it when the call does. CrunchCall listens on this PC — it never joins as a guest.</p>
+          <p>Start it when the call does. annotated listens on this PC — it never joins as a guest.</p>
           <button type="button" className="btn primary" onClick={onStart}>
             Start meeting
           </button>
@@ -128,7 +180,7 @@ export function NotesScreen({ meeting, folders, folderId, onFile, onBack, onStar
 
       {meeting.status === 'processing' ? (
         <div className="state-card">
-          <h2>Crunching on this PC</h2>
+          <h2>Writing notes on this PC</h2>
           <p>Pulling out the summary, takeaways, and owners. Audio stays on this machine.</p>
           <div className="bar" aria-hidden="true">
             <span />

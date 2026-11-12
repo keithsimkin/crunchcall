@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type ChangeEvent, type RefObject } 
 import type { CalendarEvent } from '../features/calendar/ics'
 import type { CalendarState } from '../features/calendar/store'
 import { connectUrl, importCalendarText, setAskToStart, setCalendarError, getState } from '../features/calendar/store'
+import { AccountConnect } from './AccountConnect'
 import { formatWhen } from '../features/calendar/format'
 import { LogoMark } from './icons'
 import {
@@ -64,6 +65,7 @@ export function Onboarding({
   const prompt = mcpSetupPrompt(name, draft.mcpClient)
   const config = mcpConfigText(draft.mcpClient)
   const ahead = calendar.events.filter((event) => event.end > now).length
+  const desktop = typeof window !== 'undefined' && !!window.crunchcall?.connectCalendar
 
   useEffect(() => {
     const node = cardRef.current
@@ -198,7 +200,7 @@ export function Onboarding({
         <aside className="ob-rail">
           <div className="ob-brand">
             <LogoMark />
-            <span>CrunchCall</span>
+            <span>annotated</span>
           </div>
           <nav className="ob-steps" aria-label="Setup steps">
             {steps.map((item, itemIndex) => {
@@ -256,6 +258,7 @@ export function Onboarding({
             clientId={draft.mcpClient}
             copied={copied}
             syncing={syncing}
+            desktop={desktop}
             launchAtLogin={launchAtLogin}
             onName={(value) => setDraft((current) => ({ ...current, name: value.slice(0, 48) }))}
             onUrl={setUrl}
@@ -340,6 +343,7 @@ function StepBody({
   clientId,
   copied,
   syncing,
+  desktop,
   launchAtLogin,
   onName,
   onUrl,
@@ -371,6 +375,7 @@ function StepBody({
   clientId: McpClientId
   copied: string | null
   syncing: boolean
+  desktop: boolean
   launchAtLogin: boolean
   onName: (value: string) => void
   onUrl: (value: string) => void
@@ -421,10 +426,13 @@ function StepBody({
       <div className="ob-body">
         <h2 id={titleId}>Sync the next two weeks</h2>
         <p className="ob-lede">
-          Paste a secret calendar link from Google, Outlook, or Apple. A webcal link is fine. CrunchCall reads the meetings on this PC and asks before it turns on.
+          {desktop
+            ? 'Sign in with Google or Outlook, or paste a private link from Apple. annotated reads the meetings on this PC and asks before it turns on.'
+            : 'Paste a private calendar link, or import a file. A webcal link is fine. Google and Outlook sign-in is in the desktop app.'}
         </p>
+        <AccountConnect plain />
         <label className="field ob-field">
-          <span>Calendar link</span>
+          <span>{desktop ? 'Apple or another calendar' : 'Calendar link'}</span>
           <input
             ref={urlRef}
             value={url}
@@ -455,7 +463,7 @@ function StepBody({
             <p className="set-label">Ask to turn on</p>
             <p className="help">When a meeting starts, ask in the app before listening.</p>
           </div>
-          <Switch on={calendar.askToStart} label="Ask to turn CrunchCall on" onClick={onAsk} />
+          <Switch on={calendar.askToStart} label="Ask to turn annotated on" onClick={onAsk} />
         </div>
         <p className={calendar.error ? 'ob-status cal-error' : 'ob-status'} role="status">
           {calendar.error ?? calendarLine}
@@ -470,7 +478,7 @@ function StepBody({
       <div className="ob-body">
         <h2 id={titleId}>Copy a prompt for your assistant</h2>
         <p className="ob-lede">
-          Paste this into {client.name}. It adds the local CrunchCall server and asks for your open next steps. The server is read-only and stays on this PC.
+          Paste this into {client.name}. It adds the local annotated server and asks for your open next steps. The server is read-only and stays on this PC.
         </p>
         <div className="ob-clients" role="tablist" aria-label="Assistant">
           {mcpClients.map((item) => (
@@ -511,7 +519,7 @@ function StepBody({
   return (
     <div className="ob-body">
       <h2 id={titleId}>{hello}</h2>
-      <p className="ob-lede">Crunch every call. You can run this setup again from Settings → This PC.</p>
+      <p className="ob-lede">Annotate every call. You can run this setup again from Settings → This PC.</p>
       <div className="ob-checks">
         <Check label="Name" value={trimmed || 'Add one in Settings'} onClick={() => onJump(0)} />
         <Check label="Calendar" value={calendarLine} onClick={() => onJump(1)} />
@@ -520,7 +528,7 @@ function StepBody({
       <div className="ob-switch-row">
         <div>
           <p className="set-label">Launch at login</p>
-          <p className="help">Open CrunchCall when Windows starts, so the calendar prompt is waiting.</p>
+          <p className="help">Open annotated when Windows starts, so the calendar prompt is waiting.</p>
         </div>
         <Switch on={launchAtLogin} label="Launch at login" onClick={onLaunch} />
       </div>
@@ -551,7 +559,12 @@ function clean(profile: Profile): Profile {
 
 function calendarLineFor(calendar: CalendarState, ahead: number): string {
   if (!calendar.enabled || !calendar.source) return 'Not synced yet'
-  const source = calendar.source.kind === 'file' ? calendar.source.name : 'Secret link'
+  const source =
+    calendar.source.kind === 'file'
+      ? calendar.source.name
+      : calendar.source.kind === 'url'
+        ? 'Private link'
+        : `${calendar.source.provider === 'google' ? 'Google' : 'Outlook'} · ${calendar.source.account}`
   if (ahead === 0) return `${source}. Nothing coming up in the next two weeks.`
   const noun = ahead === 1 ? 'meeting' : 'meetings'
   return `${source}. ${ahead} ${noun} coming up.`

@@ -84,7 +84,7 @@ export function ShortcutsScreen({
           <h1 id="shortcuts-title" className="page-title">
             Shortcuts
           </h1>
-          <p className="lede">Jumps and keys inside the open window. CrunchCall does not take a system-wide key.</p>
+          <p className="lede">Jumps and keys inside the open window. Ctrl+Win dictates into the app that is focused.</p>
         </div>
       </div>
 

@@ -8,7 +8,23 @@ const TICK_MS = 10_000
 export const PROMPT_BEFORE_MS = 2 * 60 * 1000
 export const PROMPT_AFTER_MS = 10 * 60 * 1000
 
-export type CalendarSource = { kind: 'url'; url: string } | { kind: 'file'; name: string }
+export type CalendarProvider = 'google' | 'microsoft'
+
+export type AccountCalendar = { id: string; name: string }
+
+export type CalendarSource =
+  | { kind: 'url'; url: string }
+  | { kind: 'file'; name: string }
+  | { kind: 'account'; provider: CalendarProvider; account: string; calendars: AccountCalendar[] }
+
+export type CalendarConnectResult =
+  | { ok: true; provider: CalendarProvider; account: string; calendars: Array<AccountCalendar & { checked?: boolean }> }
+  | { ok: false; error: string; cancelled?: boolean }
+
+export type CalendarSignIn = {
+  configured: { google: boolean; microsoft: boolean }
+  connected: { google: string | null; microsoft: string | null }
+}
 
 export type CalendarState = {
   enabled: boolean
@@ -67,7 +83,7 @@ export function setActiveMeeting(instanceKey: string | null) {
 export function setEnabled(on: boolean) {
   update({ enabled: on })
   if (on) ensureNotifyPermission()
-  if (on && state.source?.kind === 'url') void refresh()
+  if (on && refreshes(state.source)) void refresh()
 }
 
 export function setAskToStart(on: boolean) {
@@ -83,6 +99,8 @@ export function resetCalendar() {
   // Drop a refresh that is already in flight so it cannot write events back.
   refreshGen += 1
   fetchedAt = 0
+  void desktop()?.disconnectCalendar?.('google')
+  void desktop()?.disconnectCalendar?.('microsoft')
   state = {
     enabled: false,
     askToStart: true,
@@ -148,10 +166,75 @@ export function importCalendarText(name: string, text: string) {
   }
 }
 
+export async function beginAccountConnect(provider: CalendarProvider): Promise<CalendarConnectResult> {
+  const bridge = desktop()
+  if (!bridge?.connectCalendar) return { ok: false, error: 'Connect Google or Outlook in the desktop app.' }
+  update({ error: null })
+  const result = await bridge.connectCalendar(provider)
+  if (!result.ok && !result.cancelled) update({ error: result.error })
+  return result
+}
+
+export async function accountChoices(provider: CalendarProvider): Promise<CalendarConnectResult> {
+  const bridge = desktop()
+  if (!bridge?.calendarChoices) return { ok: false, error: 'Connect Google or Outlook in the desktop app.' }
+  const result = await bridge.calendarChoices(provider)
+  if (!result.ok) update({ error: result.error })
+  return result
+}
+
+export async function watchAccount(
+  provider: CalendarProvider,
+  account: string,
+  calendars: AccountCalendar[],
+): Promise<void> {
+  const chosen = calendars
+    .filter((calendar) => calendar.id.trim() && calendar.name.trim())
+    .slice(0, 20)
+    .map((calendar) => ({ id: calendar.id.trim(), name: calendar.name.trim() }))
+  if (!account.trim() || chosen.length === 0) {
+    update({ error: 'Choose at least one calendar.' })
+    return
+  }
+  update({
+    enabled: true,
+    source: { kind: 'account', provider, account: account.trim(), calendars: chosen },
+    error: null,
+  })
+  ensureNotifyPermission()
+  await refresh()
+}
+
+export async function disconnectAccount(provider: CalendarProvider): Promise<void> {
+  await desktop()?.disconnectCalendar?.(provider)
+  if (state.source?.kind === 'account' && state.source.provider === provider) {
+    update({ source: null, events: [], syncedAt: null, error: null })
+  }
+}
+
+export async function cancelAccountConnect(): Promise<void> {
+  await desktop()?.cancelCalendarSignIn?.()
+}
+
+export async function readCalendarSignIn(): Promise<CalendarSignIn | null> {
+  const bridge = desktop()
+  if (!bridge?.calendarSignIn) return null
+  try {
+    return await bridge.calendarSignIn()
+  } catch {
+    return null
+  }
+}
+
 export async function refresh(): Promise<void> {
   const source = state.source
-  if (!state.enabled || source?.kind !== 'url') return
+  if (!state.enabled || !refreshes(source)) return
   const gen = ++refreshGen
+  if (source?.kind === 'account') {
+    await refreshAccount(source, gen)
+    return
+  }
+  if (source?.kind !== 'url') return
   const result = await fetchCalendarText(source.url)
   if (gen !== refreshGen) return
   fetchedAt = Date.now()
@@ -193,6 +276,27 @@ export function normalizeUrl(raw: string): string {
   return trimmed
 }
 
+function refreshes(source: CalendarSource | null): source is Extract<CalendarSource, { kind: 'url' | 'account' }> {
+  return source?.kind === 'url' || source?.kind === 'account'
+}
+
+async function refreshAccount(source: Extract<CalendarSource, { kind: 'account' }>, gen: number) {
+  const bridge = desktop()
+  if (!bridge?.syncCalendar) {
+    update({ error: 'Connect Google or Outlook in the desktop app.' })
+    return
+  }
+  const result = await bridge.syncCalendar(source.provider, source.calendars, syncRange())
+  if (gen !== refreshGen) return
+  fetchedAt = Date.now()
+  if (!result.ok) {
+    update({ error: result.error })
+    return
+  }
+  update({ events: result.events.filter(validEvent), syncedAt: Date.now(), error: null })
+  maybeNotify()
+}
+
 function syncRange(now = Date.now()) {
   const start = new Date(now)
   start.setHours(0, 0, 0, 0)
@@ -219,7 +323,7 @@ function maybeNotify() {
 }
 
 async function maybeRefresh() {
-  if (!state.enabled || state.source?.kind !== 'url') return
+  if (!state.enabled || !refreshes(state.source)) return
   if (Date.now() - fetchedAt < REFRESH_MS) return
   await refresh()
 }
@@ -228,7 +332,7 @@ async function notify(event: CalendarEvent) {
   const payload = {
     instanceKey: event.instanceKey,
     title: event.title,
-    body: `${duePhrase(event.start)}. Turn CrunchCall on for this meeting?`,
+    body: `${duePhrase(event.start)}. Turn annotated on for this meeting?`,
   }
   try {
     const bridge = desktop()
@@ -240,7 +344,6 @@ async function notify(event: CalendarEvent) {
     const note = new Notification(payload.title, { body: payload.body })
     note.onclick = () => {
       window.focus()
-      emitStart(event.instanceKey)
     }
   } catch {
     // The in-app prompt still asks.
@@ -318,6 +421,17 @@ function validSource(source: CalendarSource | null | undefined): CalendarSource 
   if (!source || typeof source !== 'object') return null
   if (source.kind === 'url' && typeof source.url === 'string' && source.url) return { kind: 'url', url: source.url }
   if (source.kind === 'file' && typeof source.name === 'string' && source.name) return { kind: 'file', name: source.name }
+  if (source.kind === 'account' && (source.provider === 'google' || source.provider === 'microsoft')) {
+    if (typeof source.account !== 'string' || !source.account.trim()) return null
+    if (!Array.isArray(source.calendars)) return null
+    const calendars = source.calendars
+      .filter((calendar) => calendar && typeof calendar.id === 'string' && typeof calendar.name === 'string')
+      .map((calendar) => ({ id: calendar.id, name: calendar.name }))
+      .filter((calendar) => calendar.id && calendar.name)
+      .slice(0, 20)
+    if (calendars.length === 0) return null
+    return { kind: 'account', provider: source.provider, account: source.account, calendars }
+  }
   return null
 }
 
@@ -355,7 +469,7 @@ function boot() {
     maybeNotify()
   }, TICK_MS)
   syncWatching()
-  if (state.enabled && state.source?.kind === 'url') void refresh()
+  if (state.enabled && refreshes(state.source)) void refresh()
   else maybeNotify()
 }
 

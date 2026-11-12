@@ -1,46 +1,362 @@
-import { useState } from 'react'
-import { blankLive, productLive } from './fixtures'
+import { useEffect, useRef, useState } from 'react'
+import { startListening, type ListenHandle } from '../features/audio/listen'
+import { pcm16ToWavBase64 } from '../features/audio/wav'
+import { callEngine, engineAvailable } from '../features/engines/call'
+import { engineById } from '../features/engines/catalog'
+import { appendUtterance, createLiveMeeting, finishMeeting, listUtterances, readMeeting } from '../features/desk/store'
+import { toUtterance, type EngineUtterance } from '../features/desk/present'
+import { draftFromLines, parseWriterNotes, renderMarkdown } from '../features/notes/draft'
+import type { CueId } from './settingsState'
+import type { LiveLine } from './fixtures'
 
 type LiveScreenProps = {
-  fresh: boolean
   title?: string
+  meetingId?: string
+  speechId: string
+  writerId: string
+  coachId: string
+  inputDevice: string
+  language: 'auto' | 'english'
+  showCues: boolean
+  cues: Record<CueId, boolean>
+  unlocked: boolean
+  onUnlock: () => void
+  hasWriterKey: boolean
+  autoStart: boolean
   onBack: () => void
-  onEnd: () => void
+  onFinished: (meetingId: string) => void
 }
 
-export function LiveScreen({ fresh, title, onBack, onEnd }: LiveScreenProps) {
-  const session = fresh ? blankLive : productLive
-  const heading = title || session.title
+const cueLabel: Record<string, string> = {
+  'talk-ratio': 'Talk ratio',
+  'stacked-questions': 'Stacked questions',
+  'no-date': 'Missing date',
+  'no-next-steps': 'No next step',
+  interrupt: 'Interruption',
+}
+
+const cueFlag: Record<string, CueId> = {
+  'talk-ratio': 'talk',
+  'stacked-questions': 'stacked',
+  'no-date': 'date',
+  'no-next-steps': 'next',
+  interrupt: 'interrupt',
+}
+
+export function LiveScreen({
+  title,
+  meetingId,
+  speechId,
+  writerId,
+  coachId,
+  inputDevice,
+  language,
+  showCues,
+  cues,
+  unlocked,
+  onUnlock,
+  hasWriterKey,
+  autoStart,
+  onBack,
+  onFinished,
+}: LiveScreenProps) {
+  const [armed, setArmed] = useState(autoStart)
+  const [lines, setLines] = useState<LiveLine[]>([])
+  const [device, setDevice] = useState(autoStart ? 'Starting…' : 'Not listening')
+  const [status, setStatus] = useState(
+    autoStart ? 'Starting the meeting…' : meetingId ? 'Paused.' : 'Press Start when you want annotated to listen.',
+  )
+  const [elapsed, setElapsed] = useState('0:00')
   const [mic, setMic] = useState(false)
-  const [overlayOn, setOverlayOn] = useState(true)
-  const leadCue = session.cues[0]
+  const [overlayOn, setOverlayOn] = useState(showCues)
+  const [cuesOnScreen, setCuesOnScreen] = useState<{ id: string; label: string; message: string }[]>([])
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(meetingId ?? null)
+  const meetingRef = useRef<string | null>(meetingId ?? null)
+  const startedAt = useRef(Date.now())
+  const listenRef = useRef<ListenHandle | null>(null)
+  const linesRef = useRef(lines)
+  const micRef = useRef(mic)
+  const cuesRef = useRef(cues)
+  const showCuesRef = useRef(showCues)
+  const coachRef = useRef(coachId)
+  const speechRef = useRef(speechId)
+  const languageRef = useRef(language)
+  const speechBlocked = useRef(false)
+  const chunking = useRef(false)
+  const ending = useRef(false)
+  const transcribeRef = useRef<(force?: boolean) => Promise<void>>(async () => {})
+  micRef.current = mic
+  cuesRef.current = cues
+  showCuesRef.current = showCues && unlocked
+  coachRef.current = coachId
+  speechRef.current = speechId
+  languageRef.current = language
+
+  useEffect(() => {
+    if (!armed && !meetingId) return
+    const timer = window.setInterval(() => {
+      const seconds = Math.max(0, Math.round((Date.now() - startedAt.current) / 1000))
+      const minutes = Math.floor(seconds / 60)
+      setElapsed(`${minutes}:${String(seconds % 60).padStart(2, '0')}`)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [armed, meetingId])
+
+  useEffect(() => {
+    if (!meetingId && !armed) return
+    let stopped = false
+    const boot = (async () => {
+      try {
+        const meeting = meetingId ? await readMeeting(meetingId) : await createLiveMeeting(title)
+        if (stopped) return
+        if (!meeting) {
+          setStatus('That meeting is no longer on this PC.')
+          return
+        }
+        meetingRef.current = meeting.id
+        setSessionId(meeting.id)
+        if (typeof meeting.startedAt === 'number') startedAt.current = meeting.startedAt
+        if (meetingId) {
+          const prior = (await listUtterances(meeting.id)).map(toLive)
+          if (!stopped) {
+            linesRef.current = prior
+            setLines(prior)
+          }
+        }
+        setStatus(armed ? 'Listening…' : 'Paused.')
+      } catch (error) {
+        if (!stopped) setStatus(error instanceof Error ? error.message : 'Could not start the meeting.')
+      }
+    })()
+    void boot
+    return () => {
+      stopped = true
+    }
+  }, [meetingId, title, armed])
+
+  useEffect(() => {
+    if (!armed || !sessionId) return
+    let cancelled = false
+    ;(async () => {
+      listenRef.current?.stop()
+      listenRef.current = null
+      try {
+        const handle = await startListening({ mic, deviceId: inputDevice })
+        if (cancelled) {
+          handle.stop()
+          return
+        }
+        listenRef.current = handle
+        setDevice(handle.label)
+        setStatus(
+          handle.kind === 'microphone'
+            ? 'Listening on the microphone.'
+            : mic
+              ? 'Listening to system audio and the microphone.'
+              : 'Listening to system audio.',
+        )
+      } catch (error) {
+        if (!cancelled) setStatus(error instanceof Error ? error.message : 'Could not open the microphone.')
+      }
+    })()
+    return () => {
+      cancelled = true
+      listenRef.current?.stop()
+      listenRef.current = null
+    }
+  }, [armed, mic, inputDevice, sessionId])
+
+  useEffect(() => {
+    const tick = window.setInterval(() => {
+      void transcribeRef.current(false)
+    }, 8000)
+    return () => {
+      window.clearInterval(tick)
+      void window.crunchcall?.setOverlay?.(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!unlocked || !overlayOn || !showCues) {
+      void window.crunchcall?.setOverlay?.(null)
+      return
+    }
+    const lead = cuesOnScreen[0]
+    void window.crunchcall?.setOverlay?.(lead ? { label: lead.label, message: lead.message } : null)
+  }, [unlocked, overlayOn, showCues, cuesOnScreen])
+
+  async function transcribeChunk(force = false) {
+    if (ending.current && !force) return
+    if (chunking.current) return
+    const handle = listenRef.current
+    const id = meetingRef.current
+    if (!handle || !id || speechBlocked.current) return
+    const pcm = handle.pull()
+    const min = Math.max(8000, (handle.sampleRate || 16000) * 0.5)
+    if (pcm.length === 0 || (!force && pcm.length < min)) return
+    if (!engineAvailable()) {
+      speechBlocked.current = true
+      setStatus('Desktop engine is not running. Type a line, then end the meeting.')
+      return
+    }
+    const speech = engineById(speechRef.current)
+    if (speech && !speech.clientReady) {
+      speechBlocked.current = true
+      setStatus(`${speech.name} is not linked yet. Type the line, or pick a cloud speech model.`)
+      return
+    }
+    chunking.current = true
+    try {
+      const result = await callEngine('speech.transcribe', {
+        moduleId: speechRef.current,
+        language: languageRef.current,
+        wavBase64: pcm16ToWavBase64(pcm, handle.sampleRate || 16000),
+      })
+      if (!result.ok) {
+        const lower = result.message.toLowerCase()
+        if (
+          lower.includes('not linked') ||
+          lower.includes('not ready') ||
+          lower.includes('not in this build') ||
+          lower.includes('api key') ||
+          lower.includes('paste the text')
+        ) {
+          speechBlocked.current = true
+        }
+        setStatus(result.message)
+        return
+      }
+      const text = readText(result.result)
+      if (!text) return
+      const speaker = micRef.current && handle.kind === 'microphone' ? 'You' : 'Room'
+      await addLine(speaker, text)
+    } finally {
+      chunking.current = false
+    }
+  }
+  transcribeRef.current = transcribeChunk
+
+  async function addLine(speaker: string, text: string) {
+    const id = meetingRef.current
+    if (!id) return
+    const saved = await appendUtterance(id, speaker, text)
+    const line = saved ? toLive(saved) : { id: `local-${Date.now()}`, at: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), speaker, you: speaker === 'You', text }
+    const next = [...linesRef.current, line]
+    linesRef.current = next
+    setLines(next)
+    await refreshCues(next)
+  }
+
+  async function refreshCues(next: LiveLine[]) {
+    if (!engineAvailable() || !showCuesRef.current) {
+      setCuesOnScreen([])
+      return
+    }
+    const result = await callEngine('coach.scan', {
+      lines: next.map((line) => `${line.speaker}: ${line.text}`),
+      pack: coachRef.current,
+    })
+    if (!result.ok || !result.result || typeof result.result !== 'object') return
+    const raw = (result.result as { cues?: { kind?: string; message?: string }[] }).cues ?? []
+    const flags = cuesRef.current
+    const visible = raw
+      .filter((cue) => cue.kind && cue.message && flags[cueFlag[cue.kind] ?? 'talk'] !== false)
+      .map((cue, index) => ({
+        id: `${cue.kind}-${index}`,
+        label: cueLabel[cue.kind ?? ''] ?? 'Cue',
+        message: cue.message ?? '',
+      }))
+    setCuesOnScreen(visible)
+  }
+
+  async function submitLine() {
+    const text = draft.trim()
+    if (!text) return
+    setDraft('')
+    await addLine('You', text)
+  }
+
+  async function end() {
+    const id = meetingRef.current
+    if (!id || busy) return
+    setBusy(true)
+    ending.current = true
+    setStatus('Writing notes…')
+    const waitUntil = Date.now() + 20000
+    while (chunking.current && Date.now() < waitUntil) {
+      await new Promise((resolve) => window.setTimeout(resolve, 40))
+    }
+    await transcribeChunk(true)
+    listenRef.current?.stop()
+    listenRef.current = null
+    const spoken = linesRef.current.map((line) => ({ speaker: line.speaker, text: line.text }))
+    const fallback = draftFromLines(spoken)
+    fallback.markdown = renderMarkdown(title || 'Meeting', fallback.summary, fallback.takeaways, fallback.actions, spoken)
+    let draftNotes = fallback
+    const writer = engineById(writerId)
+    const writerReady = writer && writer.clientReady && (!writer.needsKey || hasWriterKey)
+    if (writerReady && spoken.length && engineAvailable()) {
+      const result = await callEngine('writer.complete', {
+        moduleId: writerId,
+        system: 'You write meeting notes. Return only JSON with keys summary, takeaways, actions, markdown. actions items have text, owner, due. Use null when owner or due is unknown. Do not invent facts.',
+        prompt: spoken.map((line) => `${line.speaker}: ${line.text}`).join('\n'),
+      })
+      if (result.ok) {
+        const text = readText(result.result)
+        if (text) draftNotes = parseWriterNotes(text, fallback)
+      }
+    }
+    try {
+      await finishMeeting(id, draftNotes)
+      onFinished(id)
+    } catch (error) {
+      setBusy(false)
+      setStatus(error instanceof Error ? error.message : 'Could not save the notes.')
+    }
+  }
+
+  const lead = unlocked && overlayOn && showCues ? cuesOnScreen[0] : undefined
 
   return (
     <section aria-labelledby="live-title">
       <div className="page-head">
         <div>
           <h1 id="live-title" className="page-title">
-            {heading}
+            {title || 'Untitled meeting'}
           </h1>
-          <p className="lede">Live · {session.device}</p>
+          <p className="lede">Live · {device}</p>
         </div>
         <div className="head-actions">
           <button type="button" className="btn ghost" onClick={onBack}>
             Meetings
           </button>
-          <button type="button" className="btn primary" onClick={onEnd}>
-            End meeting
-          </button>
+          {!armed ? (
+            <button type="button" className="btn primary" onClick={() => setArmed(true)}>
+              {meetingId || sessionId ? 'Resume' : 'Start'}
+            </button>
+          ) : null}
+          {armed || meetingId || sessionId ? (
+            <button
+              type="button"
+              className={armed ? 'btn primary' : 'btn ghost'}
+              onClick={() => void end()}
+              disabled={busy || !(meetingId || sessionId)}
+            >
+              {busy ? 'Saving…' : 'End meeting'}
+            </button>
+          ) : null}
         </div>
       </div>
 
       <div className="live-status">
-        <span className="live-dot" aria-hidden="true" />
+        <span className={armed ? 'live-dot' : 'live-dot paused'} aria-hidden="true" />
         <div>
-          <p className="elapsed">{session.elapsed}</p>
-          <p className="muted">Listening · {session.device}</p>
+          <p className="elapsed">{elapsed}</p>
+          <p className="muted">{status}</p>
         </div>
-        <div className="wave" aria-hidden="true">
+        <div className={armed ? 'wave' : 'wave paused'} aria-hidden="true">
           {Array.from({ length: 22 }, (_, index) => (
             <span key={index} />
           ))}
@@ -51,13 +367,13 @@ export function LiveScreen({ fresh, title, onBack, onEnd }: LiveScreenProps) {
         <section className="panel" aria-label="Transcript">
           <div className="panel-h">
             <h2>Transcript</h2>
-            <span className="muted">{session.lines.length === 0 ? 'Waiting' : `${session.lines.length} lines`}</span>
+            <span className="muted">{lines.length === 0 ? 'Waiting' : `${lines.length} lines`}</span>
           </div>
-          {session.lines.length === 0 ? (
-            <p className="empty tight">Speech shows up here as the call goes. It stays on this machine.</p>
+          {lines.length === 0 ? (
+            <p className="empty tight">Speech shows up here as the call goes. It stays on this machine unless you picked a cloud speech model.</p>
           ) : (
             <ol className="transcript">
-              {session.lines.map((line) => (
+              {lines.map((line) => (
                 <li key={line.id} className={line.you ? 'utter you' : 'utter'}>
                   <time>{line.at}</time>
                   <p>
@@ -68,10 +384,42 @@ export function LiveScreen({ fresh, title, onBack, onEnd }: LiveScreenProps) {
               ))}
             </ol>
           )}
+          <form
+            className="composer"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void submitLine()
+            }}
+          >
+            <label className="sr" htmlFor="live-line">
+              Add a line
+            </label>
+            <input
+              id="live-line"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="Type a line if speech is quiet"
+              autoComplete="off"
+            />
+            <button type="submit" className="btn primary small">
+              Add
+            </button>
+          </form>
         </section>
 
         <div className="cue-col">
-          {overlayOn && leadCue ? (
+          {unlocked ? null : (
+            <section className="panel" aria-label="Cues">
+              <div className="panel-h">
+                <h2>Cues</h2>
+              </div>
+              <p className="empty tight">Live coaching is part of Unlock. Notes from this call stay on this PC either way.</p>
+              <button type="button" className="btn small ghost" onClick={onUnlock}>
+                Add a license
+              </button>
+            </section>
+          )}
+          {unlocked && lead ? (
             <aside className="overlay" aria-label="Live cue">
               <div className="overlay-top">
                 <p className="overlay-kicker">Live cue</p>
@@ -79,33 +427,35 @@ export function LiveScreen({ fresh, title, onBack, onEnd }: LiveScreenProps) {
                   ×
                 </button>
               </div>
-              <p className="overlay-kind">{leadCue.label}</p>
-              <p className="overlay-msg">{leadCue.message}</p>
+              <p className="overlay-kind">{lead.label}</p>
+              <p className="overlay-msg">{lead.message}</p>
               <p className="overlay-safe">Not on your screen share</p>
             </aside>
           ) : null}
-          <section className="panel" aria-label="Cues">
-            <div className="panel-h">
-              <h2>Cues</h2>
-              {!overlayOn && leadCue ? (
-                <button type="button" className="text-btn" onClick={() => setOverlayOn(true)}>
-                  Show cue
-                </button>
-              ) : null}
-            </div>
-            {session.cues.length === 0 ? (
-              <p className="empty tight">Cues land here mid-call. They stay off your screen share.</p>
-            ) : (
-              <ul className="cue-list">
-                {session.cues.map((cue) => (
-                  <li key={cue.id} className="cue">
-                    <p className="cue-kind">{cue.label}</p>
-                    <p>{cue.message}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          {unlocked ? (
+            <section className="panel" aria-label="Cues">
+              <div className="panel-h">
+                <h2>Cues</h2>
+                {!overlayOn && cuesOnScreen[0] ? (
+                  <button type="button" className="text-btn" onClick={() => setOverlayOn(true)}>
+                    Show cue
+                  </button>
+                ) : null}
+              </div>
+              {cuesOnScreen.length === 0 ? (
+                <p className="empty tight">Cues land here mid-call. They stay off your screen share.</p>
+              ) : (
+                <ul className="cue-list">
+                  {cuesOnScreen.map((cue) => (
+                    <li key={cue.id} className="cue">
+                      <p className="cue-kind">{cue.label}</p>
+                      <p>{cue.message}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
         </div>
       </div>
 
@@ -118,8 +468,21 @@ export function LiveScreen({ fresh, title, onBack, onEnd }: LiveScreenProps) {
         >
           Mic mix {mic ? 'on' : 'off'}
         </button>
-        <span className="muted">{session.elapsed} on {session.device}</span>
+        <span className="muted">
+          {elapsed} on {device}
+        </span>
       </div>
     </section>
   )
+}
+
+function toLive(row: EngineUtterance): LiveLine {
+  const line = toUtterance(row)
+  return { id: line.id, at: line.at, speaker: line.speaker, you: line.you, text: line.text }
+}
+
+function readText(result: unknown): string {
+  if (!result || typeof result !== 'object') return ''
+  const text = (result as { text?: unknown }).text
+  return typeof text === 'string' ? text.trim() : ''
 }

@@ -1,11 +1,27 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { completeAsk, type AskMessage, type AskPull } from '../features/ask/complete'
 import type { AskFocus } from '../features/ask/context'
+import {
+  activeMention,
+  dropActiveMention,
+  emptyAskTags,
+  listMentions,
+  MENTION_GUIDE,
+  mentionMeta,
+  skillById,
+  withMention,
+  withoutMention,
+  type ActiveMention,
+  type AskTags,
+  type MentionItem,
+  type MentionKind,
+  type MentionTrigger,
+} from '../features/ask/mentions'
 import type { CalendarEvent } from '../features/calendar/ics'
 import { engineAvailable } from '../features/engines/call'
 import { engineById, engineDefaults } from '../features/engines/catalog'
 import type { MeetingRow, ProjectFolder } from './fixtures'
-import { CheckIcon, ChevronIcon, EyeIcon, PencilIcon, PlusIcon, SparkIcon } from './icons'
+import { EyeIcon, PlusIcon, SparkIcon } from './icons'
 import { profileInitials } from './profile'
 import type { SettingsSection } from './settingsState'
 
@@ -43,15 +59,6 @@ function SendArrowIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </svg>
-  )
-}
-
-function CopyIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none">
-      <rect x="8" y="8" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M6.5 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v.5" stroke="currentColor" strokeWidth="1.7" />
     </svg>
   )
 }
@@ -175,6 +182,74 @@ function AnswerBody({ text }: { text: string }) {
   )
 }
 
+function MentionMenu({
+  id,
+  mention,
+  items,
+  activeIndex,
+  onPick,
+}: {
+  id: string
+  mention: ActiveMention
+  items: MentionItem[]
+  activeIndex: number
+  onPick: (item: MentionItem) => void
+}) {
+  const listRef = useRef<HTMLDivElement>(null)
+  const meta = mentionMeta(mention.kind)
+  const label = meta.menu.toLowerCase()
+
+  useEffect(() => {
+    listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [activeIndex, items])
+
+  return (
+    <div
+      className="float-ask-picker"
+      id={id}
+      role="listbox"
+      aria-label={meta.menu}
+      onMouseDown={(event) => event.preventDefault()}
+    >
+      <div className="float-ask-mention-head">
+        <span>{meta.menu}</span>
+        <span>{mention.trigger}</span>
+      </div>
+      <div className="float-ask-picker-list" ref={listRef}>
+        {items.length ? (
+          items.map((item, index) => (
+            <button
+              key={`${item.kind}-${item.id}`}
+              id={`${id}-opt-${index}`}
+              type="button"
+              role="option"
+              aria-selected={index === activeIndex}
+              className={index === activeIndex ? 'float-ask-picker-row on' : 'float-ask-picker-row'}
+              onClick={(event) => {
+                event.stopPropagation()
+                onPick(item)
+              }}
+            >
+              <span className="float-ask-mention-key" aria-hidden="true">
+                {item.trigger}
+              </span>
+              <span className="float-ask-picker-copy">
+                <strong>{item.label}</strong>
+                <small>{item.detail}</small>
+              </span>
+            </button>
+          ))
+        ) : (
+          <p className="float-ask-picker-empty">
+            {mention.query ? `No ${label} match “${mention.query}”.` : 'Nothing else to tag.'}
+          </p>
+        )}
+      </div>
+      {items.length ? <p className="float-ask-mention-hint">↑↓ to move · Enter to tag · Esc to dismiss</p> : null}
+    </div>
+  )
+}
+
 export function FloatingAsk({
   focus,
   rows,
@@ -190,6 +265,7 @@ export function FloatingAsk({
   const panelId = useId()
   const inputId = useId()
   const pickerId = useId()
+  const mentionListId = useId()
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
   const boxRef = useRef<HTMLFormElement>(null)
@@ -197,20 +273,54 @@ export function FloatingAsk({
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [messages, setMessages] = useState<ChatTurn[]>([])
-  const [taggedIds, setTaggedIds] = useState<string[]>([])
+  const [tags, setTags] = useState<AskTags>(emptyAskTags)
+  const [caret, setCaret] = useState(0)
+  const [mentionHeld, setMentionHeld] = useState(false)
+  const [mentionCursor, setMentionCursor] = useState({ key: '', index: 0 })
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerQuery, setPickerQuery] = useState('')
   const [copied, setCopied] = useState(false)
+  const [pinnedFocusId, setPinnedFocusId] = useState<string | null>(null)
+  const pendingCaret = useRef<number | null>(null)
+  const focusMeetingId = focus.page === 'notes' ? focus.meetingId : null
+  if (focusMeetingId && focusMeetingId !== pinnedFocusId) {
+    setPinnedFocusId(focusMeetingId)
+    setTags((current) =>
+      current.meetingIds.includes(focusMeetingId)
+        ? current
+        : { ...current, meetingIds: [focusMeetingId, ...current.meetingIds] },
+    )
+  }
   const writer = engineById(writerId) ?? engineById(engineDefaults.writer)
   const you = profileInitials(userName)
+  const mention = pickerOpen || mentionHeld ? null : activeMention(draft, caret)
+  const mentionKey = mention ? `${mention.kind}:${mention.query}` : ''
+  const mentionItems = mention ? listMentions({ kind: mention.kind, query: mention.query, rows, folders, tags }) : []
+  const safeMentionIndex = mentionItems.length
+    ? (mentionCursor.key === mentionKey ? mentionCursor.index : 0) % mentionItems.length
+    : 0
   const taggedMeetings = useMemo(
-    () => taggedIds.map((id) => rows.find((row) => row.id === id)).filter((row): row is MeetingRow => Boolean(row)),
-    [rows, taggedIds],
+    () => tags.meetingIds.map((id) => rows.find((row) => row.id === id)).filter((row): row is MeetingRow => Boolean(row)),
+    [rows, tags.meetingIds],
   )
+  const chips = useMemo(() => {
+    const list: { kind: MentionKind; id: string; label: string; meeting?: MeetingRow }[] = []
+    for (const id of tags.skillIds) {
+      const skill = skillById(id)
+      if (skill) list.push({ kind: 'skill', id, label: skill.name })
+    }
+    for (const name of tags.people) list.push({ kind: 'person', id: name, label: name })
+    for (const id of tags.projectIds) {
+      const folder = folders.find((item) => item.id === id)
+      if (folder) list.push({ kind: 'project', id, label: folder.name })
+    }
+    for (const meeting of taggedMeetings) list.push({ kind: 'meeting', id: meeting.id, label: meeting.title, meeting })
+    return list
+  }, [folders, taggedMeetings, tags.people, tags.projectIds, tags.skillIds])
   const pickerRows = useMemo(() => {
     const needle = pickerQuery.trim().toLowerCase()
     return rows
-      .filter((row) => !taggedIds.includes(row.id))
+      .filter((row) => !tags.meetingIds.includes(row.id))
       .filter((row) => {
         if (!needle) return true
         return (
@@ -220,8 +330,9 @@ export function FloatingAsk({
         )
       })
       .slice(0, 8)
-  }, [pickerQuery, rows, taggedIds])
-  const canSend = Boolean(draft.trim()) && !busy
+  }, [pickerQuery, rows, tags.meetingIds])
+  const draftBody = (mention ? dropActiveMention(draft, mention).text : draft).trim()
+  const canSend = (Boolean(draftBody) || tags.skillIds.length > 0) && !busy
   const pageHint =
     focus.page === 'notes'
       ? 'This meeting'
@@ -238,29 +349,22 @@ export function FloatingAsk({
                 : focus.page === 'connect'
                   ? 'Connect'
                   : 'Shortcuts'
-  const contextNow = taggedMeetings.length
-    ? taggedMeetings.map((meeting) => meeting.title).join(' · ')
+  const contextNow = chips.length
+    ? chips.map((chip) => `${mentionMeta(chip.kind).trigger}${chip.label}`).join(' · ')
     : pageHint
-
-  useEffect(() => {
-    if (focus.page !== 'notes') return
-    setTaggedIds((current) => (current.includes(focus.meetingId) ? current : [focus.meetingId, ...current]))
-  }, [focus])
-
-  useEffect(() => {
-    if (!open) {
-      setPickerOpen(false)
-      setPickerQuery('')
-    }
-  }, [open])
 
   useEffect(() => {
     if (!open || hidden) return
     function onKey(event: globalThis.KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault()
+        if (mention) {
+          setMentionHeld(true)
+          return
+        }
         if (pickerOpen) {
           setPickerOpen(false)
+          setPickerQuery('')
           return
         }
         setOpen(false)
@@ -269,7 +373,7 @@ export function FloatingAsk({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, pickerOpen, hidden])
+  }, [open, pickerOpen, hidden, mention])
 
   useEffect(() => {
     if (!pickerOpen) return
@@ -294,7 +398,12 @@ export function FloatingAsk({
     if (!node) return
     node.style.height = '0px'
     const max = open ? 120 : 18
-    node.style.height = `${Math.min(Math.max(node.scrollHeight, open ? 36 : 16), max)}px`
+    node.style.height = `${Math.min(Math.max(node.scrollHeight, open ? 44 : 16), max)}px`
+    const pos = pendingCaret.current
+    if (pos == null) return
+    pendingCaret.current = null
+    node.focus()
+    node.setSelectionRange(pos, pos)
   }, [draft, open])
 
   function expand() {
@@ -304,29 +413,73 @@ export function FloatingAsk({
   function collapse() {
     setOpen(false)
     setPickerOpen(false)
+    setPickerQuery('')
     inputRef.current?.blur()
   }
 
   function addTag(id: string) {
-    setTaggedIds((current) => (current.includes(id) ? current : [...current, id]))
+    setTags((current) => withMention(current, { kind: 'meeting', id, label: id, detail: '', trigger: '$' }))
     setPickerOpen(false)
     setPickerQuery('')
     window.setTimeout(() => inputRef.current?.focus(), 0)
   }
 
-  function removeTag(id: string) {
-    setTaggedIds((current) => current.filter((item) => item !== id))
+  function removeChip(kind: MentionKind, id: string) {
+    setTags((current) => withoutMention(current, kind, id))
+  }
+
+  function readCaret(node: HTMLTextAreaElement) {
+    setCaret(node.selectionStart ?? 0)
+  }
+
+  function pickMention(item: MentionItem) {
+    const here = inputRef.current?.selectionStart ?? caret
+    const active = activeMention(draft, here)
+    if (active) {
+      const next = dropActiveMention(draft, active)
+      pendingCaret.current = next.caret
+      setDraft(next.text)
+      setCaret(next.caret)
+    }
+    setTags((current) => withMention(current, item))
+    setMentionHeld(false)
+    setPickerOpen(false)
+    window.setTimeout(() => inputRef.current?.focus(), 0)
   }
 
   function clearThread() {
     setMessages([])
     setDraft('')
+    setCaret(0)
+    setMentionHeld(false)
     window.setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
+  function insertTrigger(trigger: MentionTrigger) {
+    const here = inputRef.current?.selectionStart ?? caret
+    const active = activeMention(draft, here)
+    const base = active ? dropActiveMention(draft, active) : { text: draft, caret: here }
+    const before = base.text.slice(0, base.caret)
+    const after = base.text.slice(base.caret)
+    const lead = before.length > 0 && !/\s$/.test(before) ? ' ' : ''
+    const next = `${before}${lead}${trigger}${after}`
+    const pos = before.length + lead.length + 1
+    pendingCaret.current = pos
+    setDraft(next)
+    setCaret(pos)
+    setMentionHeld(false)
+    setPickerOpen(false)
+    setOpen(true)
+  }
+
+  function openTarget(meetingId: string, utteranceId?: string) {
+    collapse()
+    onOpenMeeting(meetingId, utteranceId)
   }
 
   async function copyThread() {
     const text = messages
-      .map((message) => `${message.role === 'user' ? 'You' : 'CrunchCall'}: ${message.text}`)
+      .map((message) => `${message.role === 'user' ? 'You' : 'annotated'}: ${message.text}`)
       .join('\n\n')
     if (!text) return
     try {
@@ -340,11 +493,15 @@ export function FloatingAsk({
 
   async function send(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault()
-    const text = draft.trim()
+    const skillLead = tags.skillIds
+      .map((id) => skillById(id)?.name)
+      .filter((name): name is string => Boolean(name))
+      .join(', ')
+    const text = draftBody || skillLead
     if (!text || busy) return
     setOpen(true)
     setPickerOpen(false)
-    const sources = taggedMeetings.map((meeting) => ({ id: meeting.id, title: meeting.title }))
+    setMentionHeld(false)
     const user: ChatTurn = {
       id: `u-${Date.now()}`,
       role: 'user',
@@ -353,6 +510,7 @@ export function FloatingAsk({
     }
     setMessages((current) => [...current, user])
     setDraft('')
+    setCaret(0)
     setBusy(true)
 
     const result = await completeAsk({
@@ -363,14 +521,14 @@ export function FloatingAsk({
       rows,
       folders,
       upcoming,
-      taggedMeetingIds: taggedIds,
+      tags,
     })
 
     const reply: ChatTurn = {
       id: `a-${Date.now()}`,
       role: 'assistant',
       text: result.ok ? result.text : result.message,
-      sources,
+      pulls: result.pulls,
     }
     setMessages((current) => [...current, reply])
     setBusy(false)
@@ -378,6 +536,29 @@ export function FloatingAsk({
   }
 
   function onComposerKey(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (mention && mentionItems.length) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        const delta = event.key === 'ArrowDown' ? 1 : -1
+        setMentionCursor({
+          key: mentionKey,
+          index: (safeMentionIndex + delta + mentionItems.length) % mentionItems.length,
+        })
+        return
+      }
+      if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') {
+        event.preventDefault()
+        const item = mentionItems[safeMentionIndex]
+        if (item) pickMention(item)
+        return
+      }
+    }
+    if (event.key === 'Escape' && mention) {
+      event.preventDefault()
+      event.stopPropagation()
+      setMentionHeld(true)
+      return
+    }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       void send()
@@ -391,31 +572,53 @@ export function FloatingAsk({
       onSubmit={send}
       onClick={expand}
     >
-      {open && taggedMeetings.length ? (
+      {open && chips.length ? (
         <div className="float-ask-chips">
-          {taggedMeetings.map((meeting) => (
-            <span key={meeting.id} className="float-ask-chip" title={meeting.title}>
-              <span className="float-ask-faces" aria-hidden="true">
-                {chipPeople(meeting).map((person, index) => (
-                  <span key={person} className={index === 0 ? 'float-ask-face' : 'float-ask-face alt'}>
-                    {personInitials(person)}
+          {chips.map((chip) => {
+            const meeting = chip.meeting
+            return (
+              <span key={`${chip.kind}-${chip.id}`} className="float-ask-chip" title={chip.label}>
+                {chip.kind === 'meeting' && meeting ? (
+                  <button
+                    type="button"
+                    className="float-ask-chip-main"
+                    aria-label={`Open ${meeting.title}`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      openTarget(meeting.id)
+                    }}
+                  >
+                    <span className="float-ask-faces" aria-hidden="true">
+                      {chipPeople(meeting).map((person, index) => (
+                        <span key={`${person}-${index}`} className={index === 0 ? 'float-ask-face' : 'float-ask-face alt'}>
+                          {personInitials(person)}
+                        </span>
+                      ))}
+                    </span>
+                    <span className="float-ask-chip-label">{chipLabel(meeting)}</span>
+                  </button>
+                ) : (
+                  <span className="float-ask-chip-main static">
+                    <span className="float-ask-chip-mark" aria-hidden="true">
+                      {mentionMeta(chip.kind).trigger}
+                    </span>
+                    <span className="float-ask-chip-label">{chip.label}</span>
                   </span>
-                ))}
+                )}
+                <button
+                  type="button"
+                  className="float-ask-chip-x"
+                  aria-label={`Remove ${chip.label}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    removeChip(chip.kind, chip.id)
+                  }}
+                >
+                  ×
+                </button>
               </span>
-              <span className="float-ask-chip-label">{chipLabel(meeting)}</span>
-              <button
-                type="button"
-                className="float-ask-chip-x"
-                aria-label={`Remove ${meeting.title}`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  removeTag(meeting.id)
-                }}
-              >
-                ×
-              </button>
-            </span>
-          ))}
+            )
+          })}
         </div>
       ) : null}
 
@@ -433,14 +636,36 @@ export function FloatingAsk({
         ref={inputRef}
         rows={1}
         value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onFocus={expand}
+        onChange={(event) => {
+          const value = event.target.value
+          const nextCaret = event.target.selectionStart ?? value.length
+          setDraft(value)
+          setCaret(nextCaret)
+          setMentionHeld(false)
+          if (activeMention(value, nextCaret)) {
+            setOpen(true)
+            setPickerOpen(false)
+          }
+        }}
+        onFocus={(event) => {
+          expand()
+          readCaret(event.currentTarget)
+          setMentionHeld((held) => (held ? false : held))
+        }}
+        onBlur={() => {
+          if (activeMention(draft, inputRef.current?.selectionStart ?? caret)) setMentionHeld(true)
+        }}
         onKeyDown={onComposerKey}
-        placeholder="Ask anything"
+        onKeyUp={(event) => readCaret(event.currentTarget)}
+        onClick={(event) => readCaret(event.currentTarget)}
+        onSelect={(event) => readCaret(event.currentTarget)}
+        placeholder={open ? 'Ask, or tag with @ # / $' : 'Ask anything'}
         autoComplete="off"
         disabled={busy}
         aria-expanded={open}
-        aria-controls={open ? panelId : undefined}
+        aria-autocomplete={mention ? 'list' : 'none'}
+        aria-controls={mention ? mentionListId : open ? panelId : undefined}
+        aria-activedescendant={mention && mentionItems[safeMentionIndex] ? `${mentionListId}-opt-${safeMentionIndex}` : undefined}
       />
 
       <div className="float-ask-tools">
@@ -454,6 +679,7 @@ export function FloatingAsk({
               aria-controls={pickerId}
               onClick={(event) => {
                 event.stopPropagation()
+                setMentionHeld(true)
                 setPickerOpen((current) => !current)
               }}
             >
@@ -484,7 +710,15 @@ export function FloatingAsk({
         </button>
       </div>
 
-      {open && pickerOpen ? (
+      {open && mention ? (
+        <MentionMenu
+          id={mentionListId}
+          mention={mention}
+          items={mentionItems}
+          activeIndex={safeMentionIndex}
+          onPick={pickMention}
+        />
+      ) : open && pickerOpen ? (
         <div className="float-ask-picker" id={pickerId} role="listbox" aria-label="Tag a meeting">
           <input
             className="float-ask-picker-search"
@@ -542,32 +776,36 @@ export function FloatingAsk({
           id={open ? panelId : undefined}
           role={open ? 'dialog' : undefined}
           aria-modal={open ? true : undefined}
-          aria-label={open ? 'Ask CrunchCall' : undefined}
+          aria-label={open ? 'Ask annotated' : undefined}
         >
           {composer}
           {open ? (
             <header className="float-ask-head">
               <div className="float-ask-brand">
-                <button type="button" className="float-ask-title" onClick={clearThread}>
-                  New chat
-                  <ChevronIcon />
-                </button>
-                <span className="float-ask-private">Private</span>
+                <h2 className="float-ask-title">Ask</h2>
+                <span
+                  className="float-ask-private"
+                  title={
+                    engineAvailable() && writer?.textLeavesDevice
+                      ? `${writer.name} sends the question and the tagged notes off this PC.`
+                      : 'Drawn from your notes on this PC.'
+                  }
+                >
+                  {engineAvailable() && writer?.textLeavesDevice ? 'Cloud' : 'On this PC'}
+                </span>
               </div>
               <div className="float-ask-head-actions">
-                <button type="button" className="float-ask-icon" aria-label="New chat" onClick={clearThread}>
-                  <PencilIcon />
-                </button>
-                <button
-                  type="button"
-                  className="float-ask-icon"
-                  aria-label={copied ? 'Copied' : 'Copy chat'}
-                  onClick={() => void copyThread()}
-                  disabled={!messages.length}
-                >
-                  {copied ? <CheckIcon /> : <CopyIcon />}
-                </button>
-                <button type="button" className="float-ask-icon" onClick={collapse} aria-label="Close ask">
+                {messages.length ? (
+                  <button type="button" className="float-ask-head-btn" onClick={clearThread}>
+                    New chat
+                  </button>
+                ) : null}
+                {messages.length ? (
+                  <button type="button" className="float-ask-head-btn" onClick={() => void copyThread()}>
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                ) : null}
+                <button type="button" className="float-ask-icon" onClick={collapse} aria-label="Close" title="Close">
                   ×
                 </button>
               </div>
@@ -578,7 +816,23 @@ export function FloatingAsk({
             <div className="float-ask-thread" ref={scrollerRef}>
               {messages.length === 0 && !busy ? (
                 <div className="float-ask-empty">
-                  <p>Tag a meeting, then ask about owners, decisions, or next steps.</p>
+                  <p className="float-ask-empty-lead">Ask about your notes. These keys tell the answer what to use.</p>
+                  <ul className="float-ask-keys">
+                    {MENTION_GUIDE.map((item) => (
+                      <li key={item.trigger}>
+                        <button type="button" className="float-ask-key" onClick={() => insertTrigger(item.trigger)}>
+                          <span className="float-ask-mention-key" aria-hidden="true">
+                            {item.trigger}
+                          </span>
+                          <span className="float-ask-key-copy">
+                            <strong>{item.title}</strong>
+                            <small>{item.text}</small>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="float-ask-key-label">Or start with a question</p>
                   <div className="float-ask-prompts">
                     {['Who owns the open next steps?', 'What did we decide?', 'What is coming up?'].map((prompt) => (
                       <button
@@ -624,19 +878,28 @@ export function FloatingAsk({
                   ) : (
                     <article key={message.id} className="float-ask-turn assistant">
                       <AnswerBody text={message.text} />
-                      {message.sources?.length ? (
-                        <div className="float-ask-results">
+                      {message.pulls?.length ? (
+                        <div className="float-ask-pulls">
                           <p>
-                            {message.sources.length} {message.sources.length === 1 ? 'meeting' : 'meetings'}
+                            {message.pulls.length} {message.pulls.length === 1 ? 'line' : 'lines'}
                           </p>
-                          <ul>
-                            {message.sources.map((source) => (
-                              <li key={source.id}>
-                                <DocIcon />
-                                <span>{source.title}</span>
-                              </li>
-                            ))}
-                          </ul>
+                          {message.pulls.map((pull) => (
+                            <button
+                              key={pull.id}
+                              type="button"
+                              className="float-ask-pull"
+                              onClick={() => openTarget(pull.meetingId, pull.utteranceId)}
+                            >
+                              <time>{pull.at ?? 'Notes'}</time>
+                              <span>
+                                <strong>
+                                  {pull.speaker ? `${pull.speaker} · ` : ''}
+                                  {pull.meetingTitle}
+                                </strong>
+                                <small>{pull.text}</small>
+                              </span>
+                            </button>
+                          ))}
                         </div>
                       ) : null}
                     </article>
@@ -649,7 +912,22 @@ export function FloatingAsk({
                     <div className="float-ask-trace-row">
                       <EyeIcon />
                       <span>Viewed</span>
-                      <span className="float-ask-trace-chip">{taggedMeetings[0].title}</span>
+                      <button
+                        type="button"
+                        className="float-ask-trace-chip"
+                        onClick={() => openTarget(taggedMeetings[0].id)}
+                      >
+                        {taggedMeetings[0].title}
+                      </button>
+                    </div>
+                  ) : chips[0] ? (
+                    <div className="float-ask-trace-row">
+                      <EyeIcon />
+                      <span>Using</span>
+                      <span className="float-ask-trace-chip">
+                        {mentionMeta(chips[0].kind).trigger}
+                        {chips[0].label}
+                      </span>
                     </div>
                   ) : null}
                   <div className="float-ask-trace-row">

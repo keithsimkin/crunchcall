@@ -21,6 +21,7 @@ export type DictationRow = {
   at: string
   day: 'Today' | 'Yesterday' | 'Earlier'
   text: string
+  createdAt?: number
 }
 
 export const dictateDemoStats = {
@@ -137,7 +138,7 @@ export const listedMeetings: MeetingRow[] = [
     when: 'Yesterday',
     day: 'Yesterday',
     duration: '28 min',
-    preview: 'Crunching notes on this PC…',
+    preview: 'Writing notes on this PC…',
     people: ['Nadia', 'Eli'],
     topics: ['Hiring', 'Design', 'Take-home'],
     source: 'Google Meet',
@@ -312,7 +313,7 @@ export function freshMeeting(title = 'Untitled meeting'): MeetingRow {
     when: 'Just now',
     day: 'Today',
     duration: '0 min',
-    preview: 'Crunching notes on this PC…',
+    preview: 'Writing notes on this PC…',
     people: [],
     topics: [],
     source: 'This PC',
@@ -327,7 +328,7 @@ export function statusLabel(status: MeetingStatus): string {
     case 'ready':
       return 'Ready'
     case 'processing':
-      return 'Crunching'
+      return 'Writing'
     case 'draft':
       return 'Draft'
   }

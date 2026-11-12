@@ -1,29 +1,24 @@
 /**
- * CrunchCall demo MCP server.
+ * annotated MCP server.
  *
- * Read-only access to the local demo notes. This is the shape the native
- * `crunchcalld mcp --stdio` server will take; it intentionally uses the same
- * fixture data as the app so the tools return what the UI shows.
+ * Read-only access to the notes database on this PC.
+ * The packaged app uses `crunchcalld mcp --stdio`, which reads the same file.
  *
  * Run with Bun: `bun run mcp`
  * MCP transport: newline-delimited JSON-RPC over stdio.
  */
 
 import { createInterface } from 'node:readline'
-import {
-  listedMeetings,
-  richNotes,
-  starterProjects,
-  statusLabel,
-  type MeetingRow,
-} from '../src/ui/fixtures'
-import { searchMeetings, type SearchScope } from '../src/ui/search'
+import { Database } from 'bun:sqlite'
+import { join } from 'node:path'
+
+type SearchScope = 'all' | 'people' | 'topics' | 'actions' | 'projects'
 
 type JsonRpcId = string | number | null
 type ToolArgs = Record<string, unknown>
 
 const PROTOCOL_VERSION = '2025-06-18'
-const SERVER_INFO = { name: 'crunchcall-notes', version: '0.1.0' }
+const SERVER_INFO = { name: 'annotated-notes', version: '0.1.0' }
 
 const SCOPES: SearchScope[] = ['all', 'people', 'topics', 'actions', 'projects']
 
@@ -129,162 +124,222 @@ function numberArg(args: ToolArgs, key: string, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
-function findMeeting(value: string): MeetingRow | null {
+type MeetingRow = { id: string; title: string; status: string }
+
+function dbFile(): string {
+  const override = process.env.CRUNCHCALL_DATA_DIR?.trim()
+  const dir = override || join(process.env.LOCALAPPDATA || '.', 'CrunchCall')
+  return join(dir, 'crunchcall.db')
+}
+
+function openDb(): Database | null {
+  try {
+    return new Database(dbFile(), { readonly: true })
+  } catch {
+    return null
+  }
+}
+
+function policy(db: Database): { enabled: boolean; transcripts: boolean; actions: boolean } {
+  const row = db.query("SELECT value FROM app_settings WHERE key = 'mcp'").get() as { value?: string } | null
+  if (!row?.value) return { enabled: true, transcripts: true, actions: true }
+  try {
+    const parsed = JSON.parse(row.value) as { enabled?: boolean; transcripts?: boolean; actions?: boolean }
+    return {
+      enabled: parsed.enabled !== false,
+      transcripts: parsed.transcripts !== false,
+      actions: parsed.actions !== false,
+    }
+  } catch {
+    return { enabled: true, transcripts: true, actions: true }
+  }
+}
+
+function meetings(db: Database): MeetingRow[] {
+  return db.query('SELECT id, title, status FROM meetings ORDER BY updated_at DESC').all() as MeetingRow[]
+}
+
+function findMeeting(db: Database, value: string): MeetingRow | null {
   const needle = value.trim().toLowerCase()
   if (!needle) return null
+  const rows = meetings(db)
   return (
-    listedMeetings.find((meeting) => meeting.id === needle) ??
-    listedMeetings.find((meeting) => meeting.title.toLowerCase() === needle) ??
-    listedMeetings.find((meeting) => meeting.title.toLowerCase().includes(needle)) ??
-    listedMeetings.find((meeting) => meeting.id.includes(needle)) ??
+    rows.find((meeting) => meeting.id.toLowerCase() === needle) ??
+    rows.find((meeting) => meeting.title.toLowerCase() === needle) ??
+    rows.find((meeting) => meeting.title.toLowerCase().includes(needle)) ??
+    rows.find((meeting) => meeting.id.toLowerCase().includes(needle)) ??
     null
   )
 }
 
-function meetingSummary(meeting: MeetingRow): string {
-  const people = meeting.people.length ? meeting.people.join(', ') : 'No one named'
-  const topics = meeting.topics.length ? meeting.topics.join(', ') : 'No topics'
-  return `- ${meeting.title} (${meeting.id}) — ${statusLabel(meeting.status)} · ${meeting.when} · ${meeting.duration}
-  With ${people} · ${topics} · ${meeting.source}
-  ${meeting.preview}`
-}
-
-function notesMarkdown(meeting: MeetingRow): string {
-  const notes = richNotes[meeting.id]
-  const people = meeting.people.length ? meeting.people.join(', ') : 'No one named'
-  const topics = meeting.topics.length ? meeting.topics.join(', ') : 'No topics'
-  const head = `# ${meeting.title}
-
-${statusLabel(meeting.status)} · ${meeting.when} · ${meeting.duration} · ${meeting.source}
-With: ${people}
-Topics: ${topics}
-
-${notes ? notes.summary : meeting.preview}`
-
-  if (!notes) return head
-
-  const takeaways = notes.takeaways.map((item) => `- ${item}`).join('\n')
-  const actions = notes.actions
-    .map((action) => `- [ ] ${action.text} — ${action.owner ?? 'Unassigned'} — ${action.due ?? 'No date'}`)
-    .join('\n')
-  const transcript = notes.utterances
-    .map((line) => `- [${line.at}] ${line.speaker}: ${line.text}`)
-    .join('\n')
-
-  return `${head}
-
-## Takeaways
-
-${takeaways}
-
-## Next steps
-
-${actions}
-
-## Transcript
-
-${transcript}`
-}
-
-function transcriptMarkdown(meeting: MeetingRow): string {
-  const notes = richNotes[meeting.id]
-  if (!notes) {
-    return `# ${meeting.title}
-
-No transcript is available for this meeting yet.
-
-${meeting.preview}`
+function blob(db: Database, meeting: MeetingRow, scope: SearchScope): string {
+  const flags = policy(db)
+  const parts = [meeting.title, meeting.status]
+  const notes = db.query('SELECT summary, takeaways_json FROM notes WHERE meeting_id = ?').get(meeting.id) as
+    | { summary?: string; takeaways_json?: string }
+    | null
+  if (notes && (scope === 'all' || scope === 'topics')) {
+    parts.push(notes.summary || '')
+    try {
+      const takeaways = JSON.parse(notes.takeaways_json || '[]') as unknown[]
+      for (const item of takeaways) if (typeof item === 'string') parts.push(item)
+    } catch {
+      /* ignore malformed notes */
+    }
   }
-  return `# ${meeting.title} — transcript
-
-${notes.utterances.map((line) => `- [${line.at}] ${line.speaker}: ${line.text}`).join('\n')}`
+  if (flags.actions && (scope === 'all' || scope === 'actions' || scope === 'people')) {
+    const actions = db.query('SELECT text, owner FROM action_items WHERE meeting_id = ?').all(meeting.id) as {
+      text: string
+      owner: string | null
+    }[]
+    for (const action of actions) {
+      if (scope !== 'people') parts.push(action.text)
+      if (action.owner) parts.push(action.owner)
+    }
+  }
+  if (flags.transcripts && (scope === 'all' || scope === 'people')) {
+    const lines = db.query('SELECT speaker, text FROM utterances WHERE meeting_id = ? ORDER BY seq').all(meeting.id) as {
+      speaker: string | null
+      text: string
+    }[]
+    for (const line of lines) {
+      if (line.speaker) parts.push(line.speaker)
+      if (scope !== 'people') parts.push(line.text)
+    }
+  }
+  return parts.join('\n')
 }
 
-function listMeetings(args: ToolArgs): string {
+function listMeetings(db: Database, args: ToolArgs): string {
+  const flags = policy(db)
+  if (!flags.enabled) return 'Connections are paused in annotated.'
   const status = stringArg(args, 'status')
-  const project = stringArg(args, 'project').toLowerCase()
   const query = stringArg(args, 'query').toLowerCase()
   const limit = Math.max(1, Math.min(100, numberArg(args, 'limit', 20)))
-
-  let rows = listedMeetings
+  let rows = meetings(db)
   if (status) rows = rows.filter((meeting) => meeting.status === status)
-  if (project) {
-    const folder = starterProjects.find(
-      (item) => item.id.toLowerCase() === project || item.name.toLowerCase().includes(project),
-    )
-    if (folder) rows = rows.filter((meeting) => folder.meetingIds.includes(meeting.id))
-    else rows = []
-  }
-  if (query) {
-    rows = rows.filter((meeting) =>
-      `${meeting.title} ${meeting.people.join(' ')} ${meeting.topics.join(' ')} ${meeting.preview}`
-        .toLowerCase()
-        .includes(query),
-    )
-  }
-
+  if (query) rows = rows.filter((meeting) => blob(db, meeting, 'all').toLowerCase().includes(query))
   const visible = rows.slice(0, limit)
-  return `# Meetings (${visible.length}${rows.length > visible.length ? ` of ${rows.length}` : ''})
-
-${visible.map(meetingSummary).join('\n\n')}`
+  if (visible.length === 0) return '# Meetings (0)\n\nNo meetings saved on this PC yet.'
+  return `# Meetings (${visible.length}${rows.length > visible.length ? ` of ${rows.length}` : ''})\n\n${visible
+    .map((meeting) => `- ${meeting.title} (${meeting.id}) — ${meeting.status}`)
+    .join('\n')}`
 }
 
-function searchNotes(args: ToolArgs): string {
+function searchNotes(db: Database, args: ToolArgs): string {
+  const flags = policy(db)
+  if (!flags.enabled) return 'Connections are paused in annotated.'
   const query = stringArg(args, 'query')
   if (!query) return 'Pass a query, such as a person, a topic, or a phrase.'
   const rawScope = stringArg(args, 'scope') as SearchScope
   const scope = SCOPES.includes(rawScope) ? rawScope : 'all'
   const limit = Math.max(1, Math.min(50, numberArg(args, 'limit', 10)))
-  const results = searchMeetings(listedMeetings, starterProjects, query, scope).slice(0, limit)
-  if (results.length === 0) return `No notes match “${query}”.`
-
-  return `# ${results.length} note${results.length === 1 ? '' : 's'} match “${query}”
-
-${results
-  .map(({ meeting, project, hits }) => {
-    const folder = project ? ` · ${project.name}` : ''
-    const matches = hits.map((hit) => `  - ${hit.label}: ${hit.text}`).join('\n')
-    return `## ${meeting.title} (${meeting.id})
-${statusLabel(meeting.status)} · ${meeting.when} · ${meeting.duration}${folder}
-${matches}`
-  })
-  .join('\n\n')}`
+  const needle = query.toLowerCase()
+  const hits = meetings(db)
+    .filter((meeting) => blob(db, meeting, scope).toLowerCase().includes(needle))
+    .slice(0, limit)
+  if (hits.length === 0) return `No notes match “${query}”.`
+  return `# ${hits.length} match “${query}”\n\n${hits.map((meeting) => `## ${meeting.title} (${meeting.id})`).join('\n\n')}`
 }
 
-function listProjects(): string {
-  return `# Projects
+function readNotes(db: Database, args: ToolArgs): string {
+  const flags = policy(db)
+  if (!flags.enabled) return 'Connections are paused in annotated.'
+  const meeting = findMeeting(db, stringArg(args, 'meetingId'))
+  if (!meeting) return 'No meeting matched that id or title.'
+  const notes = db.query('SELECT summary, takeaways_json, markdown FROM notes WHERE meeting_id = ?').get(meeting.id) as
+    | { summary: string; takeaways_json: string; markdown: string }
+    | null
+  let takeaways: string[] = []
+  try {
+    const parsed = JSON.parse(notes?.takeaways_json || '[]') as unknown[]
+    takeaways = parsed.filter((item): item is string => typeof item === 'string')
+  } catch {
+    takeaways = []
+  }
+  const actions = flags.actions
+    ? (db.query('SELECT text, owner, due FROM action_items WHERE meeting_id = ? ORDER BY position').all(meeting.id) as {
+        text: string
+        owner: string | null
+        due: string | null
+      }[])
+    : []
+  return `# ${meeting.title}
 
-${starterProjects
-  .map((folder) => {
-    const meetings = folder.meetingIds
-      .map((id) => listedMeetings.find((meeting) => meeting.id === id))
-      .filter((meeting): meeting is MeetingRow => !!meeting)
-    const names = meetings.map((meeting) => `  - ${meeting.title}`).join('\n')
-    return `## ${folder.name} (${folder.id})
-${folder.blurb}
-${meetings.length} note${meetings.length === 1 ? '' : 's'}${names ? `\n${names}` : ''}`
-  })
-  .join('\n\n')}`
+${meeting.status}
+
+${notes?.summary || 'No summary yet.'}
+
+## Takeaways
+
+${takeaways.map((item) => `- ${item}`).join('\n') || '- None yet.'}
+
+## Next steps
+
+${actions.map((action) => `- [ ] ${action.text} — ${action.owner ?? 'Unassigned'} — ${action.due ?? 'No date'}`).join('\n') || '- None yet.'}
+
+${notes?.markdown || ''}`
+}
+
+function readTranscript(db: Database, args: ToolArgs): string {
+  const flags = policy(db)
+  if (!flags.enabled) return 'Connections are paused in annotated.'
+  if (!flags.transcripts) return 'Transcript excerpts are off in annotated.'
+  const meeting = findMeeting(db, stringArg(args, 'meetingId'))
+  if (!meeting) return 'No meeting matched that id or title.'
+  const lines = db.query('SELECT speaker, text FROM utterances WHERE meeting_id = ? ORDER BY seq').all(meeting.id) as {
+    speaker: string | null
+    text: string
+  }[]
+  if (lines.length === 0) return `# ${meeting.title}\n\nNo transcript yet.`
+  return `# ${meeting.title} — transcript\n\n${lines.map((line) => `- ${line.speaker || 'Speaker'}: ${line.text}`).join('\n')}`
+}
+
+function listProjects(db: Database): string {
+  const flags = policy(db)
+  if (!flags.enabled) return 'Connections are paused in annotated.'
+  const row = db.query("SELECT value FROM app_settings WHERE key = 'folders'").get() as { value?: string } | null
+  let folders: { id?: string; name?: string; blurb?: string; meetingIds?: string[] }[] = []
+  try {
+    const parsed = JSON.parse(row?.value || '[]') as unknown
+    if (Array.isArray(parsed)) folders = parsed as typeof folders
+  } catch {
+    folders = []
+  }
+  if (folders.length === 0) return 'No folders yet. Create one in Projects.'
+  const rows = meetings(db)
+  return `# Projects\n\n${folders
+    .map((folder) => {
+      const names = (folder.meetingIds ?? [])
+        .map((id) => rows.find((meeting) => meeting.id === id))
+        .filter((meeting): meeting is MeetingRow => !!meeting)
+        .map((meeting) => `- ${meeting.title}`)
+        .join('\n')
+      return `## ${folder.name || 'Folder'}\n${folder.blurb || ''}\n${names || '- No meetings filed here yet.'}`
+    })
+    .join('\n\n')}`
 }
 
 function callTool(name: string, args: ToolArgs): string {
-  switch (name) {
-    case 'list_meetings':
-      return listMeetings(args)
-    case 'search_notes':
-      return searchNotes(args)
-    case 'list_projects':
-      return listProjects()
-    case 'read_notes': {
-      const meeting = findMeeting(stringArg(args, 'meetingId'))
-      return meeting ? notesMarkdown(meeting) : 'No meeting matched that id or title.'
+  const db = openDb()
+  if (!db) return 'No notes database on this PC yet.'
+  try {
+    switch (name) {
+      case 'list_meetings':
+        return listMeetings(db, args)
+      case 'search_notes':
+        return searchNotes(db, args)
+      case 'list_projects':
+        return listProjects(db)
+      case 'read_notes':
+        return readNotes(db, args)
+      case 'read_transcript':
+        return readTranscript(db, args)
+      default:
+        return `Unknown tool: ${name}`
     }
-    case 'read_transcript': {
-      const meeting = findMeeting(stringArg(args, 'meetingId'))
-      return meeting ? transcriptMarkdown(meeting) : 'No meeting matched that id or title.'
-    }
-    default:
-      return `Unknown tool: ${name}`
+  } finally {
+    db.close()
   }
 }
 
@@ -307,7 +362,7 @@ function handle(message: Record<string, unknown>) {
         capabilities: { tools: {} },
         serverInfo: SERVER_INFO,
         instructions:
-          'Read-only access to CrunchCall meeting notes on this PC. Search by person, topic, action, or project. No audio, no API keys, and no edits.',
+          'Read-only access to annotated meeting notes on this PC. Search by person, topic, action, or project. No audio, no API keys, and no edits.',
       })
       return
     }
@@ -359,4 +414,4 @@ lines.on('line', (line) => {
   }
 })
 
-process.stderr.write('CrunchCall MCP server ready on stdio\n')
+process.stderr.write('annotated MCP server ready on stdio\n')

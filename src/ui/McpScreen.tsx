@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { readMcpPolicy, saveMcpPolicy } from '../features/desk/store'
 import { PlugIcon, SparkIcon } from './icons'
 
 type ClientId = 'claude' | 'gemini' | 'cursor' | 'chatgpt' | 'any'
@@ -28,8 +29,8 @@ const clients: Client[] = [
     id: 'claude',
     name: 'Claude Desktop',
     mark: '/logos/claude.svg',
-    status: 'Connected',
-    detail: 'Read “Pricing review with Northwind” 2 min ago.',
+    status: 'Ready',
+    detail: 'Points at the notes database on this PC.',
     setup: 'Claude → Settings → Developer → Edit Config',
     language: 'json',
     config: serverConfig,
@@ -62,7 +63,7 @@ const clients: Client[] = [
     detail: 'Connect the local server as a developer tool.',
     setup: 'Settings → Connectors → Add MCP server',
     language: 'text',
-    config: 'Name: CrunchCall\nCommand: crunchcalld\nArguments: mcp --stdio',
+    config: 'Name: annotated\nCommand: crunchcalld\nArguments: mcp --stdio',
   },
   {
     id: 'any',
@@ -170,6 +171,7 @@ export function McpScreen() {
   const [activeId, setActiveId] = useState<ClientId>('claude')
   const [transcripts, setTranscripts] = useState(true)
   const [actions, setActions] = useState(true)
+  const [ready, setReady] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
   const active = clients.find((client) => client.id === activeId) ?? clients[0]
 
@@ -178,6 +180,25 @@ export function McpScreen() {
     const timer = window.setTimeout(() => setCopied(null), 1600)
     return () => window.clearTimeout(timer)
   }, [copied])
+
+  useEffect(() => {
+    let cancelled = false
+    void readMcpPolicy().then((policy) => {
+      if (cancelled) return
+      setEnabled(policy.enabled)
+      setTranscripts(policy.transcripts)
+      setActions(policy.actions)
+      setReady(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!ready) return
+    void saveMcpPolicy({ enabled, transcripts, actions })
+  }, [enabled, transcripts, actions, ready])
 
   async function copy(text: string, key: string) {
     try {
@@ -213,7 +234,7 @@ export function McpScreen() {
             <p className="mcp-kicker">Local MCP server</p>
             <strong>{enabled ? 'On this PC and listening' : 'Connections are paused'}</strong>
             <p className="muted">
-              Starts with CrunchCall. No cloud hop, no account, no audio. Turn it off and every client loses access.
+              Reads the notes database on this PC. No cloud hop and no audio. Turn it off and every client loses access.
             </p>
           </div>
         </div>
@@ -282,8 +303,7 @@ export function McpScreen() {
           </div>
 
           <p className="mcp-note">
-            This build also ships a local demo server. Run <code>bun run mcp</code>, then point the client at{' '}
-            <code>mcp/server.ts</code>. The production app uses the <code>crunchcalld</code> command above.
+            Clients run <code>crunchcalld mcp --stdio</code>. That command reads the same notes database as this app.
           </p>
         </section>
 
@@ -375,7 +395,7 @@ export function McpScreen() {
             ))}
           </ul>
           <p className="mcp-note">
-            Activity is local, too. CrunchCall keeps the request log so you can see which app read what.
+            Activity is local, too. annotated keeps the request log so you can see which app read what.
           </p>
         </section>
       </div>
