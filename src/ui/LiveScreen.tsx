@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { startListening, type ListenHandle } from '../features/audio/listen'
+import { listMicrophones, startListening, type ListenHandle, type MicOption } from '../features/audio/listen'
 import { pcm16ToWavBase64 } from '../features/audio/wav'
 import { callEngine, engineAvailable } from '../features/engines/call'
 import { engineById } from '../features/engines/catalog'
@@ -16,6 +16,7 @@ type LiveScreenProps = {
   writerId: string
   coachId: string
   inputDevice: string
+  onInputDeviceChange: (deviceId: string) => void
   language: 'auto' | 'english'
   showCues: boolean
   showMeetingIndicator: boolean
@@ -53,6 +54,7 @@ export function LiveScreen({
   writerId,
   coachId,
   inputDevice,
+  onInputDeviceChange,
   language,
   showCues,
   showMeetingIndicator,
@@ -74,6 +76,7 @@ export function LiveScreen({
   )
   const [elapsed, setElapsed] = useState('0:00')
   const [mic, setMic] = useState(false)
+  const [mics, setMics] = useState<MicOption[]>([{ id: 'default', name: 'Default' }])
   const [overlayOn, setOverlayOn] = useState(showCues)
   const [cuesOnScreen, setCuesOnScreen] = useState<{ id: string; label: string; message: string }[]>([])
   const [draft, setDraft] = useState('')
@@ -95,12 +98,30 @@ export function LiveScreen({
   const chunking = useRef(false)
   const ending = useRef(false)
   const transcribeRef = useRef<(force?: boolean) => Promise<void>>(async () => {})
+  const transcriptEnd = useRef<HTMLDivElement | null>(null)
   micRef.current = mic
   cuesRef.current = cues
   showCuesRef.current = showCues && unlocked
   coachRef.current = coachId
   speechRef.current = speechId
   languageRef.current = language
+
+  useEffect(() => {
+    let cancel = false
+    void listMicrophones().then((found) => {
+      if (!cancel && found.length) setMics(found)
+    })
+    const onChange = () => {
+      void listMicrophones().then((found) => {
+        if (!cancel && found.length) setMics(found)
+      })
+    }
+    navigator.mediaDevices?.addEventListener?.('devicechange', onChange)
+    return () => {
+      cancel = true
+      navigator.mediaDevices?.removeEventListener?.('devicechange', onChange)
+    }
+  }, [])
 
   useEffect(() => {
     if (!armed && !meetingId) return
@@ -193,6 +214,10 @@ export function LiveScreen({
   useEffect(() => {
     if (armed || sessionId) setNubDismissed(false)
   }, [armed, sessionId])
+
+  useEffect(() => {
+    transcriptEnd.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [lines.length])
 
   useEffect(() => {
     const desktop = Boolean(window.crunchcall?.setOverlaySession)
@@ -414,74 +439,116 @@ export function LiveScreen({
   endRef.current = end
 
   const lead = unlocked && overlayOn && showCues ? cuesOnScreen[0] : undefined
+  const selectedMic = mics.find((item) => item.id === inputDevice) ?? mics[0]
+  const micValue = mics.some((item) => item.id === inputDevice) ? inputDevice : 'default'
 
   return (
-    <section aria-labelledby="live-title">
-      <div className="page-head">
-        <div>
+    <section className="live-page" aria-labelledby="live-title">
+      <header className="live-top">
+        <button type="button" className="text-btn live-back" onClick={onBack}>
+          ← Meetings
+        </button>
+        <div className="live-title-row">
           <h1 id="live-title" className="page-title">
             {title || 'Untitled meeting'}
           </h1>
-          <p className="lede">Live · {device}</p>
+          <div className="head-actions">
+            {!armed ? (
+              <button type="button" className="btn primary" onClick={() => setArmed(true)}>
+                {meetingId || sessionId ? 'Resume' : 'Start'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => {
+                  setArmed(false)
+                  setStatus('Paused.')
+                }}
+              >
+                Pause
+              </button>
+            )}
+            {armed || meetingId || sessionId ? (
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => void end()}
+                disabled={busy || !(meetingId || sessionId)}
+              >
+                {busy ? 'Saving…' : 'End meeting'}
+              </button>
+            ) : null}
+          </div>
         </div>
-        <div className="head-actions">
-          <button type="button" className="btn ghost" onClick={onBack}>
-            Meetings
-          </button>
-          {!armed ? (
-            <button type="button" className="btn primary" onClick={() => setArmed(true)}>
-              {meetingId || sessionId ? 'Resume' : 'Start'}
-            </button>
-          ) : null}
-          {armed || meetingId || sessionId ? (
+      </header>
+
+      <div className="live-toolbar">
+        <div className="live-toolbar-row">
+          <div className="live-listening">
+            <span className={armed ? 'live-dot' : 'live-dot paused'} aria-hidden="true" />
+            <span className="live-time">{elapsed}</span>
+            <span className="muted live-status-text">{status}</span>
+          </div>
+          <div className="live-input">
             <button
               type="button"
-              className={armed ? 'btn primary' : 'btn ghost'}
-              onClick={() => void end()}
-              disabled={busy || !(meetingId || sessionId)}
+              className={mic ? 'chip on' : 'chip'}
+              aria-pressed={mic}
+              onClick={() => setMic((value) => !value)}
             >
-              {busy ? 'Saving…' : 'End meeting'}
+              Mic {mic ? 'on' : 'off'}
             </button>
-          ) : null}
+            <label className="live-mic-field">
+              <span className="sr">Microphone</span>
+              <select
+                className="input-select"
+                value={micValue}
+                aria-label="Choose microphone"
+                onChange={(event) => onInputDeviceChange(event.target.value)}
+              >
+                {mics.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
+        <p className="muted live-input-note">
+          {mic
+            ? `Using ${selectedMic?.name ?? 'Default'}. Source: ${device}.`
+            : `Mic off. Source: ${device}.`}
+        </p>
       </div>
 
-      <div className="live-status">
-        <span className={armed ? 'live-dot' : 'live-dot paused'} aria-hidden="true" />
-        <div>
-          <p className="elapsed">{elapsed}</p>
-          <p className="muted">{status}</p>
-        </div>
-        <div className={armed ? 'wave' : 'wave paused'} aria-hidden="true">
-          {Array.from({ length: 22 }, (_, index) => (
-            <span key={index} />
-          ))}
-        </div>
-      </div>
-
-      <div className="live-grid">
-        <section className="panel" aria-label="Transcript">
+      <div className="live-body">
+        <section className="panel live-transcript" aria-label="Transcript">
           <div className="panel-h">
             <h2>Transcript</h2>
             <span className="muted">{lines.length === 0 ? 'Waiting' : `${lines.length} lines`}</span>
           </div>
-          {lines.length === 0 ? (
-            <p className="empty tight">Speech shows up here as the call goes. It stays on this machine unless you picked a cloud speech model.</p>
-          ) : (
-            <ol className="transcript">
-              {lines.map((line) => (
-                <li key={line.id} className={line.you ? 'utter you' : 'utter'}>
-                  <time>{line.at}</time>
-                  <p>
-                    <strong>{line.speaker}</strong>
-                    <span>{line.text}</span>
-                  </p>
-                </li>
-              ))}
-            </ol>
-          )}
+          <div className="live-transcript-scroll">
+            {lines.length === 0 ? (
+              <p className="empty tight">Speech shows up here as the call goes. It stays on this machine unless you picked a cloud speech model.</p>
+            ) : (
+              <ol className="transcript">
+                {lines.map((line) => (
+                  <li key={line.id} className={line.you ? 'utter you' : 'utter'}>
+                    <time>{line.at}</time>
+                    <p>
+                      <strong>{line.speaker}</strong>
+                      <span>{line.text}</span>
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            )}
+            <div ref={transcriptEnd} />
+          </div>
           <form
-            className="composer"
+            className="composer live-composer"
             onSubmit={(event) => {
               event.preventDefault()
               void submitLine()
@@ -503,7 +570,7 @@ export function LiveScreen({
           </form>
         </section>
 
-        <div className="cue-col">
+        <aside className="live-side" aria-label="Coaching">
           {unlocked ? null : (
             <section className="panel" aria-label="Cues">
               <div className="panel-h">
@@ -552,21 +619,7 @@ export function LiveScreen({
               )}
             </section>
           ) : null}
-        </div>
-      </div>
-
-      <div className="live-bar">
-        <button
-          type="button"
-          className={mic ? 'chip on' : 'chip'}
-          aria-pressed={mic}
-          onClick={() => setMic((value) => !value)}
-        >
-          Mic mix {mic ? 'on' : 'off'}
-        </button>
-        <span className="muted">
-          {elapsed} on {device}
-        </span>
+        </aside>
       </div>
     </section>
   )

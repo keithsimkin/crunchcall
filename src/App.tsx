@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { CalendarEvent } from './features/calendar/ics'
 import { meetingsCalendarEmpty } from './features/calendar/connectCopy'
 import { dismiss, onCalendarStart, resetCalendar, setActiveMeeting } from './features/calendar/store'
@@ -7,28 +7,30 @@ import { setIndexedNotes } from './features/desk/notesIndex'
 import { disableDemoSeed, demoForced } from './features/desk/demoSeed'
 import { deleteMeeting, loadDesk, saveFolders } from './features/desk/store'
 import type { MeetingRow, ProjectAccent, ProjectFolder } from './ui/fixtures'
-import { CalendarIcon, DownloadIcon, FolderIcon, GearIcon, HomeIcon, LiveIcon, LogoMark, MicIcon, PlugIcon, ShortcutIcon } from './ui/icons'
-import { CalendarScreen } from './ui/CalendarScreen'
-import { McpScreen } from './ui/McpScreen'
-import { ProjectsScreen } from './ui/ProjectsScreen'
-import { Onboarding } from './ui/Onboarding'
+import { CalendarIcon, DownloadIcon, ExternalLinkIcon, FolderIcon, GearIcon, HomeIcon, LiveIcon, LogoMark, MicIcon, PlugIcon, ShortcutIcon } from './ui/icons'
 import { emptyProfile, profileInitials, readProfile, writeProfile, type Profile } from './ui/profile'
-import { SettingsDialog } from './ui/SettingsScreen'
-import { ShortcutsScreen } from './ui/ShortcutsScreen'
 import { useSettingsState, type SettingsSection } from './ui/settingsState'
 import { eventMatchesChord } from './ui/shortcuts'
-import { useLicense } from './ui/useLicense'
+import { SITE_URL, useLicense } from './ui/useLicense'
 import { useUpdates } from './ui/useUpdates'
 import type { AskFocus } from './features/ask/context'
 import { DictatePopup } from './ui/DictatePopup'
-import { DictateScreen } from './ui/DictateScreen'
-import { FloatingAsk } from './ui/FloatingAsk'
-import { LandingPage } from './ui/LandingPage'
-import { LiveScreen } from './ui/LiveScreen'
 import { MeetingsScreen, StartAsk } from './ui/MeetingsScreen'
-import { NotesScreen } from './ui/NotesScreen'
 import { useCalendarClock, useCalendarSignIn } from './ui/useCalendar'
 import './App.css'
+
+/** Lazy screens keep the first paint on Home, not every route's module graph. */
+const LandingPage = lazy(() => import('./ui/LandingPage').then((m) => ({ default: m.LandingPage })))
+const CalendarScreen = lazy(() => import('./ui/CalendarScreen').then((m) => ({ default: m.CalendarScreen })))
+const McpScreen = lazy(() => import('./ui/McpScreen').then((m) => ({ default: m.McpScreen })))
+const ProjectsScreen = lazy(() => import('./ui/ProjectsScreen').then((m) => ({ default: m.ProjectsScreen })))
+const Onboarding = lazy(() => import('./ui/Onboarding').then((m) => ({ default: m.Onboarding })))
+const SettingsDialog = lazy(() => import('./ui/SettingsScreen').then((m) => ({ default: m.SettingsDialog })))
+const ShortcutsScreen = lazy(() => import('./ui/ShortcutsScreen').then((m) => ({ default: m.ShortcutsScreen })))
+const DictateScreen = lazy(() => import('./ui/DictateScreen').then((m) => ({ default: m.DictateScreen })))
+const FloatingAsk = lazy(() => import('./ui/FloatingAsk').then((m) => ({ default: m.FloatingAsk })))
+const LiveScreen = lazy(() => import('./ui/LiveScreen').then((m) => ({ default: m.LiveScreen })))
+const NotesScreen = lazy(() => import('./ui/NotesScreen').then((m) => ({ default: m.NotesScreen })))
 
 type View =
   | { name: 'list' }
@@ -75,7 +77,6 @@ export default function App() {
   const { calendar, upcoming, due, now } = useCalendarClock()
   const { desktop: calendarDesktop, signIn: calendarSignIn } = useCalendarSignIn()
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null)
-  const [gearSpin, setGearSpin] = useState(false)
   const [profile, setProfile] = useState(readProfile)
   const [setupOpen, setSetupOpen] = useState(() => !readProfile().onboarded)
   const [searchNonce, setSearchNonce] = useState(0)
@@ -108,7 +109,7 @@ export default function App() {
       if (command === 'updates') return
       if (setupOpen) return
       setMarketing(false)
-      setSettingsOpen(command === 'settings' ? 'listening' : null)
+      setSettingsOpen(command === 'settings' ? 'machine' : null)
       if (window.location.hash !== '#app') history.pushState({ surface: 'app' }, '', '#app')
       if (command === 'dashboard') setView({ name: 'list' })
       else if (command === 'meeting') setView({ name: 'live', fresh: true })
@@ -182,6 +183,23 @@ export default function App() {
   useEffect(() => {
     void refreshDesk()
   }, [])
+
+  useEffect(() => {
+    // Warm the next screens after Home paints so nav stays snappy.
+    if (marketing || setupOpen) return
+    const warm = () => {
+      void import('./ui/LiveScreen')
+      void import('./ui/FloatingAsk')
+      void import('./ui/SettingsScreen')
+      void import('./ui/NotesScreen')
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(warm, { timeout: 1800 })
+      return () => window.cancelIdleCallback(id)
+    }
+    const timer = window.setTimeout(warm, 400)
+    return () => window.clearTimeout(timer)
+  }, [marketing, setupOpen])
 
   const deepLinkDone = useRef(false)
   useEffect(() => {
@@ -388,12 +406,27 @@ export default function App() {
   function openFromLanding(next?: 'list' | 'live' | 'settings') {
     if (window.location.hash !== '#app') history.pushState({ surface: 'app' }, '', '#app')
     setMarketing(false)
-    setSettingsOpen(next === 'settings' ? 'listening' : null)
+    setSettingsOpen(next === 'settings' ? 'machine' : null)
     if (next === 'live') setView({ name: 'live', fresh: true })
     else setView({ name: 'list' })
   }
 
-  if (marketing) return <LandingPage onOpenApp={openFromLanding} />
+  function openSite() {
+    const open = window.crunchcall?.openExternal
+    if (open) {
+      void open(SITE_URL)
+      return
+    }
+    window.open(SITE_URL, '_blank', 'noopener,noreferrer')
+  }
+
+  if (marketing) {
+    return (
+      <Suspense fallback={null}>
+        <LandingPage onOpenApp={openFromLanding} />
+      </Suspense>
+    )
+  }
 
   const section: Section =
     view.name === 'live' ||
@@ -490,6 +523,11 @@ export default function App() {
           </button>
         </nav>
         <div className="side-foot">
+          <button type="button" className="site-link" onClick={openSite}>
+            <LogoMark size={16} />
+            <span>Visit site</span>
+            <ExternalLinkIcon />
+          </button>
           <div className={update.ready ? 'foot-connect has-update' : 'foot-connect'}>
           <button
             type="button"
@@ -539,14 +577,10 @@ export default function App() {
               aria-haspopup="dialog"
               aria-expanded={settingsOpen !== null}
               onClick={() => {
-                setGearSpin(true)
-                setSettingsOpen((current) => (current ? null : 'listening'))
+                setSettingsOpen((current) => (current ? null : 'machine'))
               }}
             >
-              <GearIcon
-                className={gearSpin ? 'gear-icon gear-icon--spin' : 'gear-icon'}
-                onAnimationEnd={() => setGearSpin(false)}
-              />
+              <GearIcon className="gear-icon" />
             </button>
           </div>
         </div>
@@ -562,6 +596,7 @@ export default function App() {
             onStart={() => beginFromCalendar(due, true)}
           />
         ) : null}
+        <Suspense fallback={null}>
         {view.name === 'list' ? (
           <MeetingsScreen
             rows={rows}
@@ -578,6 +613,7 @@ export default function App() {
             now={now}
             onStartCalendar={(event) => beginFromCalendar(event, event.instanceKey === due?.instanceKey)}
             onDismissCalendar={dismiss}
+            onOpenCalendar={() => setView({ name: 'calendar' })}
           />
         ) : null}
         {view.name === 'live' ? (
@@ -590,6 +626,7 @@ export default function App() {
             writerId={settings.writerId}
             coachId={settings.coachId}
             inputDevice={settings.input}
+            onInputDeviceChange={settings.setInput}
             language={settings.language}
             showCues={settings.showCues}
             showMeetingIndicator={settings.showMeetingIndicator}
@@ -662,9 +699,11 @@ export default function App() {
           />
         ) : null}
         {view.name === 'connect' ? <McpScreen /> : null}
+        </Suspense>
         </div>
       </main>
       </div>
+      <Suspense fallback={null}>
       {settingsOpen ? (
         <SettingsDialog
           section={settingsOpen}
@@ -696,13 +735,6 @@ export default function App() {
           onClose={() => setSetupOpen(false)}
         />
       ) : null}
-      <DictatePopup
-        speechId={settings.speechId}
-        open={dictateOpen}
-        onOpenChange={setDictateOpen}
-        chord={settings.shortcuts['dictate.global']}
-        mode={settings.dictateMode}
-      />
       {!setupOpen ? (
         <FloatingAsk
           focus={askFocusFor(view)}
@@ -717,6 +749,14 @@ export default function App() {
           onOpenMeeting={openFromAsk}
         />
       ) : null}
+      </Suspense>
+      <DictatePopup
+        speechId={settings.speechId}
+        open={dictateOpen}
+        onOpenChange={setDictateOpen}
+        chord={settings.shortcuts['dictate.global']}
+        mode={settings.dictateMode}
+      />
     </div>
   )
 }

@@ -525,7 +525,7 @@ function StepBody({
       <p className="ob-lede">
         Annotate every call. Ask sits at the bottom of every screen and answers from the meetings, notes, actions, and
         calendar already on this PC — who owns a next step, what you decided, what is coming up. You can run this setup
-        again from Settings → This PC.
+        again from Settings → System.
       </p>
       <div className="ob-ask-card" role="note">
         <p className="set-label">Ask</p>

@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld('crunchcall', {
   setDictateShortcut: (payload) =>
     ipcRenderer.invoke('shortcuts:dictate', payload && typeof payload === 'object' ? payload : {}),
   openExternal: (url) => ipcRenderer.invoke('shell:open', String(url || '')),
+  openCalendarHelp: (provider) => ipcRenderer.invoke('calendar:help', String(provider || '')),
   licenseStatus: () => ipcRenderer.invoke('license:status'),
   activateLicense: (token) => ipcRenderer.invoke('license:activate', String(token || '')),
   clearLicense: () => ipcRenderer.invoke('license:clear'),

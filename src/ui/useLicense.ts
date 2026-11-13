@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { LicenseStatus } from '../desktop'
 
+export const SITE_URL = 'https://annotated.click'
 export const BUY_URL = 'https://annotated.click/buy'
 export const ACCOUNT_URL = 'https://annotated.click/account'
 

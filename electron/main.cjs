@@ -531,6 +531,17 @@ function ensureOverlay() {
   return overlayWin
 }
 
+function openInBrowser(value) {
+  let parsed
+  try {
+    parsed = new URL(String(value))
+  } catch {
+    return
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return
+  void shell.openExternal(parsed.toString())
+}
+
 function createWindow() {
   const isMac = process.platform === 'darwin'
   const chrome = chromeThemes.dark
@@ -558,6 +569,12 @@ function createWindow() {
   })
 
   applyWindowsTaskbarIcon(win)
+  // Links (calendar setup pages, release notes) go to the PC's default browser,
+  // never to a window inside the app.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    openInBrowser(url)
+    return { action: 'deny' }
+  })
   win.once('ready-to-show', () => {
     if (!appIcon.isEmpty()) win.setIcon(appIcon)
     win.show()
@@ -750,16 +767,40 @@ ipcMain.handle('app:announce', (event, payload) => {
   announce(payload)
 })
 
-ipcMain.handle('shell:open', async (_event, url) => {
+// Fixed destinations only — renderer cannot ask the shell to open an arbitrary address.
+const CALENDAR_HELP_URLS = {
+  google: 'https://calendar.google.com/calendar/u/0/r/settings/calendar',
+  outlook: 'https://outlook.live.com/calendar/0/options/calendar/SharedCalendars',
+  apple: 'https://support.apple.com/guide/calendar/share-a-calendar-icl1031/mac',
+}
+
+function isAllowedExternal(url) {
   let parsed
   try {
     parsed = new URL(String(url))
   } catch {
-    return
+    return null
   }
-  if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com') return
-  if (!parsed.pathname.startsWith('/keithsimkin/crunchcall')) return
-  await shell.openExternal(parsed.toString())
+  if (parsed.protocol !== 'https:') return null
+  if (parsed.hostname === 'github.com' && parsed.pathname.startsWith('/keithsimkin/crunchcall')) {
+    return parsed.toString()
+  }
+  for (const allowed of Object.values(CALENDAR_HELP_URLS)) {
+    if (parsed.toString() === allowed) return allowed
+  }
+  return null
+}
+
+ipcMain.handle('shell:open', async (event, url) => {
+  if (!fromMain(event)) return
+  const allowed = isAllowedExternal(url)
+  if (allowed) await shell.openExternal(allowed)
+})
+
+ipcMain.handle('calendar:help', async (event, provider) => {
+  if (!fromMain(event)) return
+  const url = CALENDAR_HELP_URLS[String(provider || '')]
+  if (url) await shell.openExternal(url)
 })
 
 ipcMain.handle('audio:arm-loopback', () => {

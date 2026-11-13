@@ -3,7 +3,7 @@ import type { CalendarEvent } from '../features/calendar/ics'
 import { duePhrase, formatWhen } from '../features/calendar/format'
 import { AppReel } from './AppReel'
 import { statusLabel, type MeetingRow } from './fixtures'
-import { PlusIcon, SearchIcon } from './icons'
+import { CalendarIcon, PlusIcon, SearchIcon } from './icons'
 
 type MeetingsScreenProps = {
   rows: MeetingRow[]
@@ -18,6 +18,7 @@ type MeetingsScreenProps = {
   now: number
   onStartCalendar: (event: CalendarEvent) => void
   onDismissCalendar: (instanceKey: string) => void
+  onOpenCalendar: () => void
 }
 
 export function StartAsk({
@@ -50,6 +51,17 @@ export function StartAsk({
   )
 }
 
+const HOME_UPCOMING = 3
+
+function whenParts(start: number, end: number, allDay: boolean, now: number): { day: string; time: string } {
+  const full = formatWhen(start, end, allDay, now)
+  if (full === 'Now') return { day: 'Now', time: '' }
+  if (allDay) return { day: full, time: 'All day' }
+  const split = full.split(' · ')
+  if (split.length === 2) return { day: split[0], time: split[1] }
+  return { day: 'Today', time: full }
+}
+
 function Upcoming({
   events,
   due,
@@ -58,6 +70,7 @@ function Upcoming({
   empty,
   onStart,
   onDismiss,
+  onOpenCalendar,
 }: {
   events: CalendarEvent[]
   due: CalendarEvent | null
@@ -66,35 +79,69 @@ function Upcoming({
   empty: string
   onStart: (event: CalendarEvent) => void
   onDismiss: (instanceKey: string) => void
+  onOpenCalendar: () => void
 }) {
   const next = events[0]
+  const shown = events.slice(0, HOME_UPCOMING)
+  const more = events.length - shown.length
   return (
     <section className="up-next" aria-labelledby="upcoming-title">
       {due ? <StartAsk event={due} now={now} onStart={() => onStart(due)} onDismiss={() => onDismiss(due.instanceKey)} /> : null}
-      <div className="history-head">
-        <h2 id="upcoming-title">Up next</h2>
-        <span className="muted">From your calendar</span>
+      <div className="up-next-card">
+        <div className="up-next-head">
+          <div className="up-next-lead">
+            <span className="up-next-icon" aria-hidden="true">
+              <CalendarIcon />
+            </span>
+            <div className="up-next-heading">
+              <h2 id="upcoming-title">Up next</h2>
+              <p className="up-next-sub">
+                {events.length === 0
+                  ? 'From your calendar'
+                  : `${events.length} ${events.length === 1 ? 'meeting' : 'meetings'} coming up`}
+              </p>
+            </div>
+          </div>
+          <button type="button" className="up-next-link" onClick={onOpenCalendar}>
+            <CalendarIcon />
+            View calendar
+            {more > 0 ? <span className="up-next-more">+{more}</span> : null}
+          </button>
+        </div>
+        {error ? <p className="empty up-next-empty cal-error">{error}</p> : null}
+        {!error && events.length === 0 ? <p className="empty up-next-empty">{empty}</p> : null}
+        {shown.length > 0 ? (
+          <ul className="up-next-grid">
+            {shown.map((event) => {
+              const when = whenParts(event.start, event.end, event.allDay, now)
+              const isNext = next?.instanceKey === event.instanceKey
+              return (
+                <li key={event.instanceKey} className={isNext ? 'up-tile is-next' : 'up-tile'}>
+                  <div className="up-tile-top">
+                    <span className="up-tile-when">
+                      <span className="up-tile-day">{when.day}</span>
+                      {when.time ? <span className="up-tile-time">{when.time}</span> : null}
+                    </span>
+                    {isNext && due?.instanceKey !== event.instanceKey ? (
+                      <button type="button" className="up-tile-turn" onClick={() => onStart(event)}>
+                        Turn on
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="up-tile-title" title={event.title}>
+                    {event.title}
+                  </p>
+                  {event.detail ? (
+                    <p className="up-tile-detail" title={event.detail}>
+                      {event.detail}
+                    </p>
+                  ) : null}
+                </li>
+              )
+            })}
+          </ul>
+        ) : null}
       </div>
-      {error ? <p className="empty cal-error">{error}</p> : null}
-      {!error && events.length === 0 ? <p className="empty">{empty}</p> : null}
-      {events.length > 0 ? (
-        <ul className="history upcoming">
-          {events.map((event) => (
-            <li key={event.instanceKey}>
-              <time>{formatWhen(event.start, event.end, event.allDay, now)}</time>
-              <div className="hist">
-                <strong>{event.title}</strong>
-                <span>{event.detail ?? 'On your calendar'}</span>
-              </div>
-              {next && next.instanceKey === event.instanceKey && due?.instanceKey !== event.instanceKey ? (
-                <button type="button" className="btn small ghost" onClick={() => onStart(event)}>
-                  Turn on
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : null}
     </section>
   )
 }
@@ -119,6 +166,7 @@ export function MeetingsScreen({
   now,
   onStartCalendar,
   onDismissCalendar,
+  onOpenCalendar,
 }: MeetingsScreenProps) {
   const [query, setQuery] = useState('')
   const ready = rows.filter((row) => row.status === 'ready').length
@@ -172,6 +220,7 @@ export function MeetingsScreen({
           empty={calendarEmpty}
           onStart={onStartCalendar}
           onDismiss={onDismissCalendar}
+          onOpenCalendar={onOpenCalendar}
         />
       ) : null}
 
