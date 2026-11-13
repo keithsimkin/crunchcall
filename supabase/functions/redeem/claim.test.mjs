@@ -2,10 +2,10 @@ import { generateKeyPairSync } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { expect, test } from 'bun:test'
-import { verifyLicense } from '../../electron/license.cjs'
-import { createMemoryCodes, createSupabaseCodes, redeemCode } from './src/codes.mjs'
-import { decideActivation, mapSeat } from './src/seats.mjs'
-import { handleRequest } from './src/worker.mjs'
+import { verifyLicense } from '../../../electron/license.cjs'
+import { createMemoryCodes, createSupabaseCodes, redeemCode } from './codes.mjs'
+import { decideActivation, mapSeat } from './seats.mjs'
+import { handleRequest, redeemPath } from './worker.mjs'
 
 const ISSUED = 1_780_000_000
 const CODE = 'ANN-TEST-CODE-0001'
@@ -128,9 +128,43 @@ test('seat rpc payloads map without echoing extra fields', () => {
   expect(mapSeat(null).reason).toBe('unavailable')
 })
 
+test('supabase mounts the same redeem and license routes under the function name', async () => {
+  const keys = generateKeyPairSync('ed25519')
+  const privateKey = keys.privateKey.export({ type: 'pkcs8', format: 'pem' })
+  const db = memory()
+  const env = { ANNOTATED_LICENSE_PRIVATE_KEY: privateKey }
+  const seats = { async activate() { return { ok: true, limited: true, maxDevices: 1 } }, async deactivate() { return { ok: true } } }
+  const opts = { codes: db, seats, now: () => ISSUED }
+  expect(redeemPath('https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem')).toBe('/redeem')
+  expect(redeemPath('https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem/api/license/activate')).toBe('/api/license/activate')
+  const form = await handleRequest(new Request('https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem'), env, opts)
+  expect(form.headers.get('content-type')).toBe('text/html; charset=utf-8')
+  expect(await form.text()).toContain('Redeem your code')
+  const posted = await handleRequest(
+    new Request('https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ code: CODE, email: EMAIL }),
+    }),
+    env,
+    opts,
+  )
+  const body = await posted.json()
+  const activated = await handleRequest(
+    new Request('https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem/api/license/activate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ license: body.license, deviceId: 'ab'.repeat(32) }),
+    }),
+    env,
+    opts,
+  )
+  expect(await activated.json()).toEqual({ ok: true, limited: true, maxDevices: 1 })
+})
+
 test('the migration keeps codes and activations off the public roles', () => {
   const sql = fs.readFileSync(
-    path.join(import.meta.dir, '../../supabase/migrations/20261113110000_appsumo_licensing.sql'),
+    path.join(import.meta.dir, '../../migrations/20261113110000_appsumo_licensing.sql'),
     'utf8',
   )
   const lower = sql.toLowerCase()
@@ -203,6 +237,8 @@ test('redeem and activate hide secrets and repeat the same key', async () => {
   expect(html).toContain(firstBody.license)
   expect(html).toContain('Copy key')
   expect(html).toContain('https://annotated.click')
+  expect(page.headers.get('content-type')).toBe('text/html; charset=utf-8')
+  expect(page.headers.get('x-annotated-content-type')).toBe('text/html; charset=utf-8')
   expect(html).toContain('Deactivate this PC')
   expect(html).not.toContain('service-role-secret')
   expect(html).not.toContain('BEGIN PRIVATE KEY')

@@ -62,7 +62,8 @@ test('a changed payload or signature does not verify', () => {
   const [prefix, payload, signature] = issued.token.split('.')
   const flipped = `${payload.slice(0, -1)}${payload.endsWith('a') ? 'b' : 'a'}`
   expect(verifyLicense(`${prefix}.${flipped}.${signature}`, issued.publicKey, NOW).ok).toBe(false)
-  expect(verifyLicense(`${prefix}.${payload}.${signature.slice(0, -1)}A`, issued.publicKey, NOW).reason).toBe('signature')
+  const flippedSig = `${signature[0] === 'A' ? 'B' : 'A'}${signature.slice(1)}`
+  expect(verifyLicense(`${prefix}.${payload}.${flippedSig}`, issued.publicKey, NOW).reason).toBe('signature')
   expect(verifyLicense(issued.token, other.publicKey, NOW).reason).toBe('signature')
 })
 

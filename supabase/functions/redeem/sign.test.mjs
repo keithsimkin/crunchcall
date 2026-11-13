@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from 'node:crypto'
 import { expect, test } from 'bun:test'
-import { issueLicense, verifyLicense } from '../../electron/license.cjs'
-import { issueLicenseToken, verifyLicenseToken } from './src/sign.mjs'
+import { issueLicense, verifyLicense } from '../../../electron/license.cjs'
+import { issueLicenseToken, verifyLicenseToken } from './sign.mjs'
 
 const NOW = 1_780_000_000
 const FIELDS = { email: 'Buyer@Example.com', order: 'appsumo_ANN-TEST-CODE-0001', issued: NOW }

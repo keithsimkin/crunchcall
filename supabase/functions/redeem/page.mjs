@@ -118,9 +118,14 @@ document.getElementById('copy').addEventListener('click', async () => {
   return page
 }
 
+export const HTML_CONTENT_TYPE = 'text/html; charset=utf-8'
+
 export function securityHeaders(csp) {
   return {
-    'content-type': 'text/html; charset=utf-8',
+    'content-type': HTML_CONTENT_TYPE,
+    // Supabase rewrites text/html to text/plain on GET to *.supabase.co.
+    // This header is left alone so the Netlify proxy can put the type back.
+    'x-annotated-content-type': HTML_CONTENT_TYPE,
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',

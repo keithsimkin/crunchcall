@@ -22,9 +22,9 @@ To move a code, open annotated on the old PC, go to Settings, then License, and 
 
 ## What was not deployed
 
-Nothing in this change was applied to Supabase or Cloudflare. The project ref is `nnanwekmhkxcwxrbhtld`. Run the commands below from a machine that is logged into both.
+Nothing in this change was applied to Supabase or Netlify. The Supabase project ref is `nnanwekmhkxcwxrbhtld`. The site is the Netlify project behind `annotated.click` and `annotation1.netlify.app`. Run the commands below from a machine that is logged into both.
 
-The zone `annotated.click` has to be on the same Cloudflare account as the Worker, with a proxied DNS record, because the Worker is attached with routes rather than as the origin for the whole site. Paths outside `/redeem*` and `/api/license/*` stay on the existing host. Attach a rate limiting rule to `POST /redeem` and `POST /api/license/*` (for example 10 and 30 requests per minute per IP). `workers_dev` is off so the Worker is not also published on a `workers.dev` hostname.
+`netlify.toml` at the repo root proxies `/redeem*` and `/api/license/*` to the redeem function. This repository had no Netlify config file; the landing assets in `public/` are what that site publishes, so the proxy belongs here. Paths outside those two prefixes stay on the existing site. A status 200 rewrite keeps the HTTP method and body.
 
 ## 1. Database
 
@@ -55,28 +55,36 @@ That writes three files under `.appsumo-codes/` (gitignored):
 
 Do not commit that folder. Anyone with the CSV can redeem a code until it is claimed.
 
-## 3. Worker
+## 3. Redeem function
 
-From `workers/redeem`:
+`supabase/functions/redeem` is one Edge Function. `GET` and `POST /redeem` and `POST /api/license/activate` and `POST /api/license/deactivate` are paths under it. It signs `annotated1.<payload>.<sig>` with WebCrypto over the same canonical JSON `electron/license.cjs` verifies. `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected. The only secret to set is the PKCS8 Ed25519 PEM that matches `electron/license-public.pem`.
+
+`supabase/config.toml` sets `verify_jwt = false` for this function so the public form and the desktop app can call it without a user JWT. The service-role key stays in the function environment.
 
 ```bash
-npx wrangler secret put ANNOTATED_LICENSE_PRIVATE_KEY < ../../licensing/private.pem
-npx wrangler secret put SUPABASE_URL
-npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-npx wrangler deploy
+supabase link --project-ref nnanwekmhkxcwxrbhtld
+supabase secrets set ANNOTATED_LICENSE_PRIVATE_KEY="$(cat licensing/private.pem)"
+supabase functions deploy redeem
 ```
 
-`ANNOTATED_LICENSE_PRIVATE_KEY` is the PKCS8 Ed25519 PEM that matches `electron/license-public.pem`. The Worker signs `annotated1.<payload>.<sig>` with WebCrypto over the same canonical JSON the app verifies. `SUPABASE_URL` is `https://nnanwekmhkxcwxrbhtld.supabase.co`. Use the service-role key, not the anon key. Secrets are not written into `wrangler.toml`.
+Supabase rewrites `Content-Type: text/html` to `text/plain` on `GET` to `*.supabase.co`, and adds a sandbox content-security-policy. `POST` keeps `text/html`. The function also sends `x-annotated-content-type: text/html; charset=utf-8`. After you deploy the Netlify site, `netlify/edge-functions/redeem-html.js` reads that header and restores `text/html` for `https://annotated.click/redeem`, and drops the sandbox policy. Check it with:
 
-For local `wrangler dev`, copy `workers/redeem/.dev.vars.example` to `.dev.vars` and fill it in. `.dev.vars` is gitignored.
+```bash
+curl -sI https://annotated.click/redeem | tr -d '\r' | grep -i -E 'HTTP/|content-type|content-security-policy|x-annotated-content-type'
+```
 
-Routes:
+Expect `content-type: text/html` and no `sandbox` policy. The same code and email returns the same key. A different email is rejected. Responses do not include the private key, the service-role key, or another buyer's email.
 
-- `annotated.click/redeem*` — `GET` shows the form, `POST` claims the code and shows the key.
-- `annotated.click/api/license/activate` — verifies the key and takes a seat.
-- `annotated.click/api/license/deactivate` — frees that PC's seat.
+Routes, after the Netlify proxy:
 
-Submitting a redeemed code with the same email returns the same key. A different email is rejected. Responses do not include the private key, the service-role key, or another buyer's email.
+- `https://annotated.click/redeem` — `GET` shows the form, `POST` claims the code and shows the key.
+- `https://annotated.click/api/license/activate` — verifies the key and takes a seat.
+- `https://annotated.click/api/license/deactivate` — frees that PC's seat.
+
+Publish the site from this repo so `netlify.toml` is what Netlify uses. The proxy targets are:
+
+- `/redeem` and `/redeem/*` → `https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem` and `.../redeem/:splat`
+- `/api/license/*` → `https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem/api/license/:splat`
 
 ## 4. What the Windows app does
 

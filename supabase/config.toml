@@ -1,0 +1,6 @@
+# Public redeem function. SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected.
+# The only secret to set is ANNOTATED_LICENSE_PRIVATE_KEY.
+project_id = "nnanwekmhkxcwxrbhtld"
+
+[functions.redeem]
+verify_jwt = false
