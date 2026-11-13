@@ -164,9 +164,15 @@ async function changeSeat(request, env, deps, action) {
   return json(response.body, response.status)
 }
 
+export function redeemPath(url) {
+  const path = new URL(url).pathname.replace(/\/+$/, '') || '/'
+  const match = path.match(/(?:^|\/)redeem(?=\/|$)(.*)$/)
+  if (!match) return path
+  return match[1] || '/redeem'
+}
+
 export async function handleRequest(request, env, overrides) {
-  const url = new URL(request.url)
-  const path = url.pathname.replace(/\/+$/, '') || '/'
+  const path = redeemPath(request.url)
   if (path === '/redeem' && request.method === 'GET') return html(renderForm())
   const deps = createDeps(env, overrides)
   if (!signingKey(env)) {

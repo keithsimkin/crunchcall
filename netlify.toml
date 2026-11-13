@@ -1,0 +1,35 @@
+# annotated.click is the Netlify site (annotation1.netlify.app). This repo had
+# no netlify.toml; the landing assets in public/ are what that site publishes.
+# These rules only add the redeem proxy. Build command and publish directory
+# stay whatever the Netlify UI already uses.
+#
+# Supabase serves GET text/html as text/plain on *.supabase.co. The edge
+# function below reads x-annotated-content-type and restores text/html after
+# the proxy, and drops the sandbox content-security-policy Supabase adds.
+# A status 200 rewrite keeps the method and body.
+
+[[redirects]]
+from = "/redeem"
+to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem"
+status = 200
+force = true
+
+[[redirects]]
+from = "/redeem/*"
+to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem/:splat"
+status = 200
+force = true
+
+[[redirects]]
+from = "/api/license/*"
+to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem/api/license/:splat"
+status = 200
+force = true
+
+[[edge_functions]]
+function = "redeem-html"
+path = "/redeem"
+
+[[edge_functions]]
+function = "redeem-html"
+path = "/redeem/*"
