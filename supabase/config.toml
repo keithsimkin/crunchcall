@@ -4,3 +4,6 @@ project_id = "nnanwekmhkxcwxrbhtld"
 
 [functions.redeem]
 verify_jwt = false
+
+[functions.billing]
+verify_jwt = false

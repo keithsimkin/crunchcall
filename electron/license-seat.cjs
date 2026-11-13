@@ -117,6 +117,7 @@ function readCache(dir) {
       deviceId: parsed.deviceId,
       checkedAt: Number(parsed.checkedAt) || 0,
       ok: parsed.ok === true,
+      limited: parsed.limited === true,
     }
   } catch {
     return null
@@ -146,8 +147,9 @@ function apiOrigin(baseUrl) {
 }
 
 function viewSeat(dir, order, deviceId, now) {
-  if (!seatRequired(order)) return { applicable: false, ok: true, stale: false, seat: 'open', detail: '' }
   const cache = readCache(dir)
+  const limitedHere = Boolean(cache && cache.order === order && cache.limited === true)
+  if (!seatRequired(order) && !limitedHere) return { applicable: false, ok: true, stale: false, seat: 'open', detail: '' }
   if (!cache || cache.order !== order || cache.deviceId !== deviceId) {
     return { applicable: true, ok: false, stale: true, seat: 'inactive', detail: SEAT_OFFLINE }
   }
@@ -213,12 +215,18 @@ async function touchSeat(opts) {
   )
   if (result.ok) {
     failedAt = 0
-    writeCache(opts.dir, { order: opts.order, deviceId: opts.deviceId, checkedAt: opts.now, ok: true })
-    return { ok: true }
+    writeCache(opts.dir, {
+      order: opts.order,
+      deviceId: opts.deviceId,
+      checkedAt: opts.now,
+      ok: true,
+      limited: result.limited === true,
+    })
+    return { ok: true, limited: result.limited === true }
   }
   if (result.reason === 'limit_reached') {
     failedAt = 0
-    writeCache(opts.dir, { order: opts.order, deviceId: opts.deviceId, checkedAt: opts.now, ok: false })
+    writeCache(opts.dir, { order: opts.order, deviceId: opts.deviceId, checkedAt: opts.now, ok: false, limited: true })
     return { ok: false, reason: 'limit_reached', message: SEAT_TAKEN }
   }
   failedAt = opts.now
