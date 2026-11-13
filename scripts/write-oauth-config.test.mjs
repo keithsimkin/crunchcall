@@ -2,11 +2,12 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, expect, test } from 'bun:test'
 import { DEFAULT_GOOGLE_CLIENT_ID } from '../electron/calendar-accounts.cjs'
 
 const temps = []
-const script = new URL('./write-oauth-config.mjs', import.meta.url)
+const scriptPath = fileURLToPath(new URL('./write-oauth-config.mjs', import.meta.url))
 
 afterEach(() => {
   for (const dir of temps.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
@@ -23,7 +24,7 @@ test('the pack step writes oauth.json from env without printing the secret', () 
   env.CRUNCHCALL_OAUTH_LOCAL = path.join(dir, 'missing.json')
   env.CRUNCHCALL_OAUTH_OUT = out
 
-  const result = spawnSync(process.execPath, [script.pathname], { env, encoding: 'utf8' })
+  const result = spawnSync(process.execPath, [scriptPath], { env, encoding: 'utf8' })
   expect(result.status).toBe(0)
   expect(result.stdout).not.toContain('super-secret-value')
   expect(result.stderr).not.toContain('super-secret-value')
@@ -55,7 +56,7 @@ test('a local file fills fields the environment leaves empty', () => {
   env.CRUNCHCALL_OAUTH_LOCAL = local
   env.CRUNCHCALL_OAUTH_OUT = out
 
-  const result = spawnSync(process.execPath, [script.pathname], { env, encoding: 'utf8' })
+  const result = spawnSync(process.execPath, [scriptPath], { env, encoding: 'utf8' })
   expect(result.status).toBe(0)
   expect(result.stdout).not.toContain('local-secret-value')
   expect(JSON.parse(fs.readFileSync(out, 'utf8'))).toEqual({
@@ -63,6 +64,57 @@ test('a local file fills fields the environment leaves empty', () => {
     googleClientSecret: 'local-secret-value',
     microsoftClientId: 'local-ms-client',
   })
+})
+
+test('a UTF-8 BOM on oauth.local.json still supplies the google secret', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crunchcall-oauth-pack-'))
+  temps.push(dir)
+  const local = path.join(dir, 'oauth.local.json')
+  const out = path.join(dir, 'oauth.json')
+  fs.writeFileSync(
+    local,
+    `\uFEFF${JSON.stringify({
+      googleClientSecret: 'bom-secret-value',
+      microsoftClientId: 'bom-ms-client',
+    })}`,
+  )
+  const env = { ...process.env }
+  delete env.CRUNCHCALL_GOOGLE_CLIENT_ID
+  delete env.CRUNCHCALL_GOOGLE_CLIENT_SECRET
+  delete env.CRUNCHCALL_MICROSOFT_CLIENT_ID
+  env.CRUNCHCALL_OAUTH_LOCAL = local
+  env.CRUNCHCALL_OAUTH_OUT = out
+
+  const result = spawnSync(process.execPath, [scriptPath], { env, encoding: 'utf8' })
+  expect(result.status).toBe(0)
+  expect(result.stdout).not.toContain('bom-secret-value')
+  expect(result.stderr).not.toContain('could not be parsed')
+  expect(JSON.parse(fs.readFileSync(out, 'utf8'))).toEqual({
+    googleClientId: DEFAULT_GOOGLE_CLIENT_ID,
+    googleClientSecret: 'bom-secret-value',
+    microsoftClientId: 'bom-ms-client',
+  })
+})
+
+test('a local oauth file that exists but is not json warns without printing the secret', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crunchcall-oauth-pack-'))
+  temps.push(dir)
+  const local = path.join(dir, 'oauth.local.json')
+  const out = path.join(dir, 'oauth.json')
+  fs.writeFileSync(local, '{\n  "googleClientSecret": "super-secret-value"\n')
+  const env = { ...process.env }
+  delete env.CRUNCHCALL_GOOGLE_CLIENT_ID
+  delete env.CRUNCHCALL_GOOGLE_CLIENT_SECRET
+  delete env.CRUNCHCALL_MICROSOFT_CLIENT_ID
+  env.CRUNCHCALL_OAUTH_LOCAL = local
+  env.CRUNCHCALL_OAUTH_OUT = out
+
+  const result = spawnSync(process.execPath, [scriptPath], { env, encoding: 'utf8' })
+  expect(result.status).toBe(0)
+  expect(result.stderr).toContain('could not be parsed as JSON')
+  expect(result.stderr).not.toContain('super-secret-value')
+  expect(result.stdout).not.toContain('super-secret-value')
+  expect(JSON.parse(fs.readFileSync(out, 'utf8')).googleClientSecret).toBe('')
 })
 
 test('a pack without a google secret warns and still writes the public client id', () => {
@@ -76,7 +128,7 @@ test('a pack without a google secret warns and still writes the public client id
   env.CRUNCHCALL_OAUTH_LOCAL = path.join(dir, 'missing.json')
   env.CRUNCHCALL_OAUTH_OUT = out
 
-  const result = spawnSync(process.execPath, [script.pathname], { env, encoding: 'utf8' })
+  const result = spawnSync(process.execPath, [scriptPath], { env, encoding: 'utf8' })
   expect(result.status).toBe(0)
   expect(result.stderr).toContain('Google client secret is missing')
   expect(JSON.parse(fs.readFileSync(out, 'utf8')).googleClientId).toBe(DEFAULT_GOOGLE_CLIENT_ID)

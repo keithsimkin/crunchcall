@@ -41,6 +41,8 @@ export type LicenseStatus = {
   authenticity: LicenseAuthenticity
   signer: string
   detail: string
+  seat?: 'open' | 'active' | 'inactive' | 'blocked'
+  seatDetail?: string
 }
 
 export type LicenseActivateResult = { ok: true; status: LicenseStatus } | { ok: false; message: string }
@@ -119,6 +121,7 @@ declare global {
       openCalendarHelp?: (provider: 'google' | 'outlook' | 'apple') => Promise<void>
       licenseStatus?: () => Promise<LicenseStatus>
       activateLicense?: (token: string) => Promise<LicenseActivateResult>
+      deactivateLicense?: () => Promise<LicenseActivateResult>
       clearLicense?: () => Promise<LicenseStatus>
       buyLicense?: () => Promise<void>
       openAccount?: () => Promise<void>

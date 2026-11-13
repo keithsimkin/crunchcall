@@ -1042,9 +1042,14 @@ function LicensePage({ license }: { license: LicenseDesk }) {
   const { desktop, status, refresh } = license
   const [token, setToken] = useState('')
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const unlocked = status?.tier === 'unlock'
   const plan = !desktop ? 'Checked in the desktop app' : unlocked ? 'Unlock' : 'Free'
+  const appsumo = Boolean(status?.order?.startsWith('appsumo_'))
+  const seatActive = appsumo && status?.license === 'valid' && status?.seat === 'active'
+  const canActivate =
+    Boolean(token.trim()) || (appsumo && status?.license === 'valid' && status?.seat !== 'active')
 
   async function buy() {
     if (window.crunchcall?.buyLicense) {
@@ -1067,6 +1072,7 @@ function LicensePage({ license }: { license: LicenseDesk }) {
     if (!activateLicense) return
     setBusy(true)
     setError('')
+    setNotice('')
     try {
       const result = await activateLicense(token.trim())
       if (!result.ok) {
@@ -1085,8 +1091,29 @@ function LicensePage({ license }: { license: LicenseDesk }) {
     if (!clearLicense) return
     setBusy(true)
     setError('')
+    setNotice('')
     try {
       await clearLicense()
+      await refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function deactivate() {
+    const deactivateLicense = window.crunchcall?.deactivateLicense
+    if (!deactivateLicense) return
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await deactivateLicense()
+      if (!result.ok) {
+        setError(result.message)
+        return
+      }
+      setToken('')
+      setNotice('This PC is deactivated. On the next PC, open annotated.click/redeem with the same code and email, paste the key, and activate it.')
       await refresh()
     } finally {
       setBusy(false)
@@ -1100,7 +1127,14 @@ function LicensePage({ license }: { license: LicenseDesk }) {
           <span className="pop-value">{plan}</span>
         </Row>
         {status?.order ? (
-          <Row title="Order" help="The payment this license came from.">
+          <Row
+            title="Order"
+            help={
+              appsumo
+                ? 'AppSumo. This code stays on one Windows PC until you deactivate it.'
+                : 'The payment this license came from.'
+            }
+          >
             <span className="pop-value">{status.order}</span>
           </Row>
         ) : null}
@@ -1116,9 +1150,19 @@ function LicensePage({ license }: { license: LicenseDesk }) {
       </Section>
       {status?.authenticity === 'tampered' ? <p className="pop-alert">{status.detail}</p> : null}
       {status?.license === 'invalid' ? <p className="pop-alert">The saved license is not valid.</p> : null}
+      {status?.seatDetail ? <p className="pop-alert">{status.seatDetail}</p> : null}
+      {notice ? <p className="pop-note">{notice}</p> : null}
       <Section label="Add a license">
         {desktop ? (
-          <Row title="License" help="Paste the license from your account, or from the payment page." stack>
+          <Row
+            title="License"
+            help={
+              appsumo
+                ? 'Paste the key from annotated.click/redeem. One code activates this PC.'
+                : 'Paste the license from your account, or from the payment page.'
+            }
+            stack
+          >
             <textarea
               className="license-field"
               aria-label="License"
@@ -1129,10 +1173,14 @@ function LicensePage({ license }: { license: LicenseDesk }) {
               placeholder="annotated1…"
             />
             <div className="head-actions">
-              <button type="button" className="btn small primary" disabled={busy || !token.trim()} onClick={() => void activate()}>
+              <button type="button" className="btn small primary" disabled={busy || !canActivate} onClick={() => void activate()}>
                 Activate
               </button>
-              {status?.license === 'valid' ? (
+              {seatActive ? (
+                <button type="button" className="btn small" disabled={busy} onClick={() => void deactivate()}>
+                  Deactivate this PC
+                </button>
+              ) : status?.license === 'valid' ? (
                 <button type="button" className="btn small ghost" disabled={busy} onClick={() => void remove()}>
                   Remove
                 </button>
@@ -1158,6 +1206,7 @@ function LicensePage({ license }: { license: LicenseDesk }) {
       {error ? <p className="pop-alert">{error}</p> : null}
       <p className="pop-note standalone">
         A license that was altered does not unlock this PC. A copy of the app that was changed after signing stays on the free plan.
+        {appsumo ? ' Each AppSumo code stays on one Windows PC until you deactivate it.' : ''}
       </p>
     </div>
   )

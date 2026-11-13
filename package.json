@@ -18,6 +18,7 @@
     "desktop:pack": "bun run build && bun scripts/write-oauth-config.mjs && electron-builder --win",
     "license:issue": "bun licensing/issue.mjs",
     "license:serve": "bun licensing/server.mjs",
+    "appsumo:codes": "bun scripts/appsumo-generate-codes.mjs",
     "lint": "oxlint",
     "mcp": "bun mcp/server.ts",
     "preview": "vite preview"

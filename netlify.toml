@@ -1,0 +1,38 @@
+# annotated.click is Netlify site bespoke-cactus-bc1032 (annotation1.netlify.app).
+# The site builds with `bun run build` and publishes `dist`. Those settings are
+# repeated here so this file does not fall back to publishing the repo root.
+#
+# Supabase serves GET text/html as text/plain on *.supabase.co. The edge
+# function below reads x-annotated-content-type and restores text/html after
+# the proxy, and drops the sandbox content-security-policy Supabase adds.
+# A status 200 rewrite keeps the method and body.
+
+[build]
+  command = "bun run build"
+  publish = "dist"
+
+[[redirects]]
+from = "/redeem"
+to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem"
+status = 200
+force = true
+
+[[redirects]]
+from = "/redeem/*"
+to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem/:splat"
+status = 200
+force = true
+
+[[redirects]]
+from = "/api/license/*"
+to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem/api/license/:splat"
+status = 200
+force = true
+
+[[edge_functions]]
+function = "redeem-html"
+path = "/redeem"
+
+[[edge_functions]]
+function = "redeem-html"
+path = "/redeem/*"

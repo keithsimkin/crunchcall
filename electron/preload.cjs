@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld('crunchcall', {
   openCalendarHelp: (provider) => ipcRenderer.invoke('calendar:help', String(provider || '')),
   licenseStatus: () => ipcRenderer.invoke('license:status'),
   activateLicense: (token) => ipcRenderer.invoke('license:activate', String(token || '')),
+  deactivateLicense: () => ipcRenderer.invoke('license:deactivate'),
   clearLicense: () => ipcRenderer.invoke('license:clear'),
   buyLicense: () => ipcRenderer.invoke('license:buy'),
   openAccount: () => ipcRenderer.invoke('license:account'),

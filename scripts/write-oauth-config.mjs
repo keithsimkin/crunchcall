@@ -10,11 +10,31 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const localPath = process.env.CRUNCHCALL_OAUTH_LOCAL || path.join(root, 'electron', 'oauth.local.json')
 const outPath = process.env.CRUNCHCALL_OAUTH_OUT || path.join(root, 'electron', 'oauth.json')
 
+function stripBom(text) {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+}
+
+function displayPath(file) {
+  const relative = path.relative(root, file)
+  return relative && !relative.startsWith('..') ? relative : file
+}
+
 function readJson(file) {
+  let text
   try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
+    text = fs.readFileSync(file, 'utf8')
+  } catch (error) {
+    if (!error || error.code === 'ENOENT') return {}
+    console.warn(`Could not read ${displayPath(file)}.`)
+    return {}
+  }
+  try {
+    const parsed = JSON.parse(stripBom(text))
     return parsed && typeof parsed === 'object' ? parsed : {}
   } catch {
+    console.warn(
+      `${displayPath(file)} exists but could not be parsed as JSON. A UTF-8 BOM or a syntax error drops the Google client secret from the packaged build.`,
+    )
     return {}
   }
 }
