@@ -19,7 +19,26 @@ export function restoreRedeemHtml(response) {
   })
 }
 
-export default async (_request, context) => {
-  const response = await context.next()
+export function redeemUpstream(requestUrl) {
+  const incoming = new URL(requestUrl)
+  const extra = incoming.pathname === '/redeem' ? '' : incoming.pathname.replace(/^\/redeem/, '')
+  return `https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem${extra}${incoming.search}`
+}
+
+export async function proxyRedeem(request, fetchImpl = fetch) {
+  const headers = new Headers(request.headers)
+  headers.delete('host')
+  const response = await fetchImpl(redeemUpstream(request.url), {
+    method: request.method,
+    headers,
+    redirect: 'manual',
+  })
   return restoreRedeemHtml(response)
+}
+
+export default async (request, context) => {
+  const response = await context.next()
+  const restored = restoreRedeemHtml(response)
+  if (restored.status !== 404 || request.method !== 'GET') return restored
+  return proxyRedeem(request)
 }
