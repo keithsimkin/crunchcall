@@ -6,6 +6,7 @@ const sidecar = require('./sidecar.cjs')
 const { createCalendarAccounts, loadClientIds } = require('./calendar-accounts.cjs')
 const updates = require('./updates.cjs')
 const license = require('./license.cjs')
+const seat = require('./license-seat.cjs')
 
 const BUY_URL = 'https://annotated.click/buy'
 const ACCOUNT_URL = 'https://annotated.click/account'
@@ -819,9 +820,52 @@ function fromDictate(event) {
   return Boolean(dictateWin && event.sender === dictateWin.webContents)
 }
 
+function licenseDir() {
+  return app.getPath('userData')
+}
+
 function currentLicenseStatus() {
-  const stored = license.readStored(app.getPath('userData'), license.bundledPublicKey())
-  return license.publicStatus(stored, authenticity)
+  const dir = licenseDir()
+  const stored = license.readStored(dir, license.bundledPublicKey())
+  const base = license.publicStatus(stored, authenticity)
+  if (!seat.seatRequired(base.order)) return seat.decorateStatus(base, { applicable: false, ok: true })
+  const now = Math.floor(Date.now() / 1000)
+  const deviceId = seat.currentDeviceId(dir)
+  const view = seat.viewSeat(dir, base.order, deviceId, now)
+  if (view.applicable && stored.ok && (view.stale || !view.ok) && view.seat !== 'blocked') {
+    const token = seat.readToken(dir)
+    if (token) {
+      seat.scheduleRecheck({
+        dir,
+        token,
+        order: stored.order,
+        deviceId,
+        deviceLabel: seat.deviceLabel(),
+        now,
+      })
+    }
+  }
+  return seat.decorateStatus(base, view)
+}
+
+async function answeredLicenseStatus() {
+  const dir = licenseDir()
+  const stored = license.readStored(dir, license.bundledPublicKey())
+  if (stored.ok && seat.seatRequired(stored.order)) {
+    const token = seat.readToken(dir)
+    const deviceId = seat.currentDeviceId(dir)
+    if (token && deviceId) {
+      await seat.recheckIfDue({
+        dir,
+        token,
+        order: stored.order,
+        deviceId,
+        deviceLabel: seat.deviceLabel(),
+        now: Math.floor(Date.now() / 1000),
+      })
+    }
+  }
+  return currentLicenseStatus()
 }
 
 async function refreshAuthenticity() {
@@ -837,18 +881,82 @@ async function refreshAuthenticity() {
   }
 }
 
-ipcMain.handle('license:status', () => currentLicenseStatus())
+ipcMain.handle('license:status', () => answeredLicenseStatus())
 
-ipcMain.handle('license:activate', (event, token) => {
+ipcMain.handle('license:activate', async (event, token) => {
   if (!fromMain(event)) return { ok: false, message: 'Open the main window to add a license.' }
-  const saved = license.writeStored(app.getPath('userData'), String(token || ''), license.bundledPublicKey())
+  const dir = licenseDir()
+  const text = String(token || '').trim() || seat.readToken(dir)
+  const verified = license.verifyLicense(text, license.bundledPublicKey())
+  if (!verified.ok) return { ok: false, message: license.explainReason(verified.reason) }
+  const previous = license.readStored(dir, license.bundledPublicKey())
+  if (previous.ok && seat.seatRequired(previous.order) && previous.order !== verified.order) {
+    const previousToken = seat.readToken(dir)
+    if (previousToken) {
+      await seat.releaseSeat({
+        dir,
+        token: previousToken,
+        deviceId: seat.currentDeviceId(dir),
+        now: Math.floor(Date.now() / 1000),
+      })
+    }
+  }
+  if (seat.seatRequired(verified.order)) {
+    const deviceId = seat.currentDeviceId(dir)
+    if (!deviceId) return { ok: false, message: 'Could not identify this PC.' }
+    const claimed = await seat.claimSeat({
+      dir,
+      token: text,
+      order: verified.order,
+      deviceId,
+      deviceLabel: seat.deviceLabel(),
+      now: Math.floor(Date.now() / 1000),
+    })
+    if (!claimed.ok) return { ok: false, message: claimed.message }
+  }
+  const saved = license.writeStored(dir, text, license.bundledPublicKey())
   if (!saved.ok) return { ok: false, message: license.explainReason(saved.reason) }
   return { ok: true, status: currentLicenseStatus() }
 })
 
-ipcMain.handle('license:clear', (event) => {
+ipcMain.handle('license:deactivate', async (event) => {
+  if (!fromMain(event)) return { ok: false, message: 'Open the main window to change the license.' }
+  const dir = licenseDir()
+  const stored = license.readStored(dir, license.bundledPublicKey())
+  if (!stored.ok || !seat.seatRequired(stored.order)) {
+    return { ok: false, message: 'This license is not an AppSumo code.' }
+  }
+  const token = seat.readToken(dir)
+  const deviceId = seat.currentDeviceId(dir)
+  const released = await seat.releaseSeat({
+    dir,
+    token,
+    deviceId,
+    now: Math.floor(Date.now() / 1000),
+  })
+  if (!released.ok) return { ok: false, message: released.message }
+  license.clearStored(dir)
+  if (overlaySession) {
+    overlaySession = { ...overlaySession, cue: null }
+    pushOverlaySession()
+  }
+  return { ok: true, status: currentLicenseStatus() }
+})
+
+ipcMain.handle('license:clear', async (event) => {
   if (!fromMain(event)) return currentLicenseStatus()
-  license.clearStored(app.getPath('userData'))
+  const dir = licenseDir()
+  const stored = license.readStored(dir, license.bundledPublicKey())
+  if (stored.ok && seat.seatRequired(stored.order)) {
+    const now = Math.floor(Date.now() / 1000)
+    const deviceId = seat.currentDeviceId(dir)
+    if (seat.viewSeat(dir, stored.order, deviceId, now).ok) {
+      const released = await seat.releaseSeat({ dir, token: seat.readToken(dir), deviceId, now })
+      if (!released.ok) return currentLicenseStatus()
+    }
+  }
+  license.clearStored(dir)
+  seat.clearCache(dir)
   // Drop coaching cue on the nub; keep the live indicator if a session is open.
   if (overlaySession) {
     overlaySession = { ...overlaySession, cue: null }

@@ -34,9 +34,13 @@ function firstCredential(...values) {
   return ''
 }
 
+function stripBom(text) {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+}
+
 function readOAuthFile(file) {
   try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
+    const parsed = JSON.parse(stripBom(fs.readFileSync(file, 'utf8')))
     return parsed && typeof parsed === 'object' ? parsed : {}
   } catch {
     return {}

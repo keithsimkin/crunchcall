@@ -3,8 +3,12 @@
 .env.*
 !.env.example
 
-# AppSumo agent scratch
+# AppSumo agent scratch and generated code batches
 .appsumo-*
+.appsumo-codes/
+
+# Worker local secrets
+.dev.vars
 
 # Logs
 logs
