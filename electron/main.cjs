@@ -60,7 +60,11 @@ const captureOut = demoMode.captureDirectory(process.argv)
 const recordOut = demoMode.recordDirectory(process.argv)
 const studio = Boolean(captureOut || recordOut)
 if (demoOn) {
-  app.setPath('userData', demoMode.demoUserDataPath(app.getPath('appData')))
+  const demoDir = demoMode.demoUserDataPath(app.getPath('appData'))
+  app.setPath('userData', demoDir)
+  // The engine reads this before LOCALAPPDATA\CrunchCall. Set it in this process
+  // before the sidecar is spawned so a demo session cannot open the real notes.
+  process.env.CRUNCHCALL_DATA_DIR = demoDir
 }
 if (studio) {
   app.commandLine.appendSwitch('force-device-scale-factor', '2')
@@ -591,6 +595,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       backgroundThrottling: false,
+      additionalArguments: demoOn ? ['--annotated-demo-isolated'] : [],
     },
   })
 
@@ -1162,7 +1167,7 @@ async function runCapture(dir) {
   win.setContentSize(1440, 900)
   for (const name of demoMode.CAPTURE_SCREENS) {
     const ok = await win.webContents.executeJavaScript(`window.__annotatedCapture(${JSON.stringify(name)})`)
-    if (!ok) console.error(`capture ${name} timed out before the screen finished painting`)
+    if (!ok) throw new Error(`capture ${name} timed out before the screen finished painting`)
     if (overlayWin && !overlayWin.isDestroyed()) overlayWin.hide()
     const image = await win.webContents.capturePage()
     fs.writeFileSync(path.join(dir, `${name}.png`), image.toPNG())

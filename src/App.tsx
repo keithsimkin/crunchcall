@@ -83,7 +83,10 @@ export default function App() {
   const { desktop: calendarDesktop, signIn: calendarSignIn } = useCalendarSignIn()
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null)
   const [profile, setProfile] = useState(() => {
-    if (demoForced()) seedDemoData({ force: true })
+    // Force only inside the isolated Electron demo profile. A browser ?demo=1
+    // visit still fills an empty desk, and leaves notes that are already there.
+    if (window.crunchcall?.demoIsolated) seedDemoData({ force: true })
+    else if (demoForced()) seedDemoData()
     return readProfile()
   })
   const [setupOpen, setSetupOpen] = useState(() => !readProfile().onboarded)

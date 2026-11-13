@@ -1,6 +1,6 @@
 import { callEngine, engineAvailable } from '../engines/call'
 import type { ProjectFolder } from '../../ui/fixtures'
-import { demoForced, seedDemoData } from './demoSeed'
+import { seedDemoData } from './demoSeed'
 import {
   readFolders,
   toNotes,
@@ -64,11 +64,11 @@ async function engineOk(method: string, params?: Record<string, unknown>): Promi
 let creating: Promise<EngineMeeting> | null = null
 
 export async function loadDesk(): Promise<DeskSnapshot> {
-  const forced = demoForced()
-  seedDemoData({ force: forced })
-  // Demo mode always shows the fixture story, even if a previous demo launch
-  // left meetings in the sidecar. The sidecar file lives in the demo profile.
-  if (forced || !engineAvailable()) return snapshot(readLocal(), readFolders(readFolderCache()))
+  const isolated = typeof window !== 'undefined' && Boolean(window.crunchcall?.demoIsolated)
+  seedDemoData({ force: isolated })
+  // The isolated demo profile always shows the fixture story. A browser demo
+  // link does not skip the engine, and does not overwrite a desk that has notes.
+  if (isolated || !engineAvailable()) return snapshot(readLocal(), readFolders(readFolderCache()))
   const listed = await engineOk('meetings.list')
   const meetings = listOf<EngineMeeting>(listed, 'meetings')
   // Empty sidecar still shows local demo data so screenshots work in desktop too.

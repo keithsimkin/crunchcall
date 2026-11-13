@@ -31,6 +31,7 @@ ipcRenderer.on('app:command', (_event, command) => {
 })
 
 contextBridge.exposeInMainWorld('crunchcall', {
+  demoIsolated: process.argv.includes('--annotated-demo-isolated'),
   fetchCalendar: (url) => ipcRenderer.invoke('calendar:fetch', url),
   calendarSignIn: () => ipcRenderer.invoke('calendar:sign-in'),
   connectCalendar: (provider) => ipcRenderer.invoke('calendar:connect', provider),

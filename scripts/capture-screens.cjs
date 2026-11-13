@@ -79,8 +79,8 @@ child.on('exit', (code) => {
   const home = fs.readFileSync(path.join(outDir, 'home.png'))
   const width = home.readUInt32BE(16)
   const height = home.readUInt32BE(20)
-  if (width < 1440 || height < 900) {
-    console.error(`home.png is ${width}x${height}, expected at least 1440x900`)
+  if (width !== 2880 || height !== 1800) {
+    console.error(`home.png is ${width}x${height}, expected 2880×1800`)
     process.exit(1)
   }
   console.log(`capture ok ${width}x${height} → ${outDir}`)

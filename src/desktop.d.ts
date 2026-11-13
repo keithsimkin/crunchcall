@@ -82,6 +82,7 @@ declare global {
     __annotatedTypeAsk?: (text: string) => Promise<void>
     __annotatedSubmitAsk?: () => Promise<void>
     crunchcall?: {
+      demoIsolated?: boolean
       fetchCalendar: (url: string) => Promise<CalendarFetchResult>
       calendarSignIn: () => Promise<CalendarSignIn>
       connectCalendar: (provider: CalendarProvider) => Promise<CalendarConnectResult>

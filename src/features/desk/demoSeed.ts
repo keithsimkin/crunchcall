@@ -235,7 +235,7 @@ export function deskIsEmpty(): boolean {
 /** Writes meetings, notes, projects, dictations, calendar, and a demo profile. */
 export function seedDemoData(options?: { force?: boolean }): boolean {
   if (typeof localStorage === 'undefined') return false
-  const force = Boolean(options?.force) || demoForced()
+  const force = Boolean(options?.force)
   if (!force && demoDisabled()) return false
   if (!force && !deskIsEmpty()) return false
 

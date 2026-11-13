@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import path from 'node:path'
 import {
   CAPTURE_SCREENS,
   RECORD_FILES,
@@ -21,7 +22,9 @@ test('demo mode is requested by the flag, the env var, or a capture', () => {
 })
 
 test('the demo profile is a separate directory and looks licensed', () => {
-  expect(demoUserDataPath('/home/alex/AppData/Roaming')).toBe('/home/alex/AppData/Roaming/annotated-demo')
+  const appData = path.join('/home/alex/AppData/Roaming')
+  expect(demoUserDataPath(appData)).toBe(path.join(appData, 'annotated-demo'))
+  expect(path.basename(demoUserDataPath(appData))).toBe('annotated-demo')
   const status = demoLicenseStatus()
   expect(status.tier).toBe('unlock')
   expect(status.license).toBe('valid')
