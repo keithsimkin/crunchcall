@@ -12,7 +12,8 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
-    "desktop": "electron .",
+    "desktop": "bun scripts/desktop.mjs",
+    "desktop:app": "electron .",
     "build": "tsc -b && vite build",
     "desktop:pack": "bun run build && electron-builder --win",
     "license:issue": "bun licensing/issue.mjs",

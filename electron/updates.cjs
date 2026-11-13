@@ -27,7 +27,12 @@ function publish(next) {
 function startUpdater(allowQuit) {
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
-  if (!app.isPackaged) autoUpdater.forceDevUpdateConfig = true
+  // Unpackaged `electron .` has no installer channel. forceDevUpdateConfig only
+  // exists for deliberate updater tests (ANNOTATED_DEV_UPDATES=1).
+  if (!app.isPackaged) {
+    if (process.env.ANNOTATED_DEV_UPDATES !== '1') return
+    autoUpdater.forceDevUpdateConfig = true
+  }
 
   autoUpdater.on('update-available', (info) => {
     publish({ phase: 'available', version: info && info.version, percent: 0 })
@@ -65,6 +70,10 @@ function startUpdater(allowQuit) {
 }
 
 async function checkForAppUpdate() {
+  if (!app.isPackaged && process.env.ANNOTATED_DEV_UPDATES !== '1') {
+    publish({ phase: 'current', version: app.getVersion(), percent: 0 })
+    return state
+  }
   publish({ phase: 'checking', version: app.getVersion(), percent: 0 })
   try {
     const result = await autoUpdater.checkForUpdates()

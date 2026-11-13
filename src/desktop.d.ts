@@ -52,6 +52,25 @@ export type AppNotice = {
   focus?: boolean
 }
 
+export type OverlayCue = { label: string; message: string }
+
+export type OverlayLine = { id: string; speaker: string; text: string }
+
+export type OverlayPosition = 'center' | 'top-right' | 'top-left' | 'bottom-center'
+
+export type OverlaySession = {
+  meetingId: string
+  title: string
+  elapsed: string
+  listening: boolean
+  opacity: number
+  position: OverlayPosition
+  cue: OverlayCue | null
+  lines: OverlayLine[]
+}
+
+export type OverlayAction = 'open' | 'end' | 'pause' | 'resume' | 'dismiss'
+
 declare global {
   const __CRUNCHCALL_VERSION__: string
   interface Window {
@@ -73,6 +92,10 @@ declare global {
       onStart: (callback: (instanceKey: string) => void) => () => void
       pasteDictation?: (text: string) => Promise<void>
       hideDictateBar?: () => Promise<void>
+      setDictateShortcut?: (payload: {
+        chord: { ctrl: boolean; shift: boolean; alt: boolean; meta: boolean; key: string }
+        mode: 'toggle' | 'hold'
+      }) => Promise<{ ok: boolean; accelerator?: string; mode?: string }>
       onDictateHotkey?: (callback: (phase: 'start' | 'stop') => void) => () => void
       engine?: (
         method: string,
@@ -82,8 +105,14 @@ declare global {
         | { ok: false; error: { code: string; message: string } | string }
       >
       armLoopback?: () => Promise<void>
+      setOverlaySession?: (session: OverlaySession | null) => Promise<{ ok: boolean; active?: boolean }>
       setOverlay?: (cue: { label: string; message: string } | null) => Promise<void>
+      setOverlayExpanded?: (expanded: boolean) => Promise<{ ok: boolean; expanded?: boolean }>
+      overlayAction?: (action: OverlayAction) => Promise<{ ok: boolean }>
+      onOverlaySession?: (callback: (session: OverlaySession | null) => void) => () => void
+      onOverlayExpanded?: (callback: (expanded: boolean) => void) => () => void
       onOverlay?: (callback: (cue: { label: string; message: string } | null) => void) => () => void
+      onOverlayAction?: (callback: (action: OverlayAction) => void) => () => void
       openAtLogin?: () => Promise<boolean>
       setOpenAtLogin?: (on: boolean) => Promise<void>
       openExternal?: (url: string) => Promise<void>

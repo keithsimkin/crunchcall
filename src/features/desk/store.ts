@@ -1,5 +1,6 @@
 import { callEngine, engineAvailable } from '../engines/call'
 import type { ProjectFolder } from '../../ui/fixtures'
+import { demoForced, seedDemoData } from './demoSeed'
 import {
   readFolders,
   toNotes,
@@ -63,9 +64,12 @@ async function engineOk(method: string, params?: Record<string, unknown>): Promi
 let creating: Promise<EngineMeeting> | null = null
 
 export async function loadDesk(): Promise<DeskSnapshot> {
+  seedDemoData({ force: demoForced() })
   if (!engineAvailable()) return snapshot(readLocal(), readFolders(readFolderCache()))
   const listed = await engineOk('meetings.list')
   const meetings = listOf<EngineMeeting>(listed, 'meetings')
+  // Empty sidecar still shows local demo data so screenshots work in desktop too.
+  if (meetings.length === 0) return snapshot(readLocal(), readFolders(readFolderCache()))
   const bundles = await Promise.all(
     meetings.map(async (meeting) => {
       const [notesWrap, utteranceWrap, actionWrap] = await Promise.all([
@@ -103,7 +107,7 @@ function snapshot(desk: LocalDesk, folders: ProjectFolder[]): DeskSnapshot {
     const utterances = desk.utterances[meeting.id] ?? []
     const note = desk.notes[meeting.id] ?? null
     const actions = desk.actions[meeting.id] ?? []
-    const rich = toNotes(note, utterances, actions)
+    const rich = toNotes(note, utterances, actions, meeting.id)
     if (rich && (note || utterances.length || actions.length)) notes[meeting.id] = rich
     return toRow(meeting, utterances, note, actions)
   })
@@ -155,7 +159,6 @@ export async function readMeeting(id: string): Promise<EngineMeeting | null> {
   if (engineAvailable()) {
     const result = await engineOk('meetings.get', { id })
     if (result && typeof result === 'object' && 'id' in result) return result as EngineMeeting
-    return null
   }
   return readLocal().meetings.find((item) => item.id === id) ?? null
 }
@@ -163,7 +166,8 @@ export async function readMeeting(id: string): Promise<EngineMeeting | null> {
 export async function listUtterances(meetingId: string): Promise<EngineUtterance[]> {
   if (engineAvailable()) {
     const wrap = await engineOk('utterances.list', { meetingId })
-    return listOf<EngineUtterance>(wrap, 'utterances')
+    const rows = listOf<EngineUtterance>(wrap, 'utterances')
+    if (rows.length) return rows
   }
   return readLocal().utterances[meetingId] ?? []
 }

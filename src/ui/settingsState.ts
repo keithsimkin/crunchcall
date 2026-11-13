@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { callEngine, engineAvailable } from '../features/engines/call'
 import { engineById, engineDefaults, engineModules } from '../features/engines/catalog'
+import {
+  defaultDictateMode,
+  defaultShortcutBindings,
+  readDictateMode,
+  readShortcutBindings,
+  type DictateMode,
+  type ShortcutBindings,
+  type ShortcutChord,
+  type ShortcutId,
+} from './shortcuts'
 import { useTheme, type ThemePreference } from './theme'
 import { KeyIcon, ListenIcon, MeetingsIcon, MicIcon, PcIcon } from './icons'
 
@@ -12,7 +22,7 @@ export const settingsItems: { id: SettingsSection; label: string; hint: string; 
     label: 'Listening',
     hint: 'Mic, language, cues',
     icon: ListenIcon,
-    find: 'audio input microphone mic default headset cues speech willow whisper dictate groq language',
+    find: 'audio input microphone mic default headset cues speech willow whisper dictate groq language overlay position opacity indicator',
   },
   {
     id: 'speech',
@@ -43,6 +53,8 @@ export const settingsItems: { id: SettingsSection; label: string; hint: string; 
     find: 'license unlock buy purchase payment coaching export markdown signature authentic signed installer download',
   },
 ]
+
+export type { DictateMode, ShortcutBindings, ShortcutChord, ShortcutId }
 
 export type SupportActionId = 'restore' | 'support' | 'help'
 
@@ -94,7 +106,32 @@ type StoredSettings = {
   input: InputDevice
   cues: Record<CueId, boolean>
   showCues: boolean
+  showMeetingIndicator: boolean
+  /** Overlay panel opacity from 0.35 (more see-through) to 1 (solid). */
+  overlayOpacity: number
+  overlayPosition: OverlayPosition
+  shortcuts: ShortcutBindings
+  dictateMode: DictateMode
   launchAtLogin: boolean
+}
+
+export type OverlayPosition = 'center' | 'top-right' | 'top-left' | 'bottom-center'
+
+export const overlayPositionOptions: [OverlayPosition, string][] = [
+  ['center', 'Center'],
+  ['top-right', 'Top right'],
+  ['top-left', 'Top left'],
+  ['bottom-center', 'Bottom'],
+]
+
+export function clampOverlayOpacity(value: number): number {
+  if (!Number.isFinite(value)) return 0.94
+  return Math.min(1, Math.max(0.35, Math.round(value * 100) / 100))
+}
+
+export function readOverlayPosition(value: unknown): OverlayPosition {
+  if (value === 'top-right' || value === 'top-left' || value === 'bottom-center' || value === 'center') return value
+  return 'center'
 }
 
 const storageKey = 'crunchcall.settings'
@@ -145,6 +182,11 @@ function loadSettings(): StoredSettings {
     input: 'default',
     cues: defaultCues(),
     showCues: true,
+    showMeetingIndicator: true,
+    overlayOpacity: 0.94,
+    overlayPosition: 'center',
+    shortcuts: defaultShortcutBindings,
+    dictateMode: defaultDictateMode(),
     launchAtLogin: false,
   }
   try {
@@ -160,6 +202,13 @@ function loadSettings(): StoredSettings {
       input: savedInput(parsed.input),
       cues: readCues(parsed.cues),
       showCues: typeof parsed.showCues === 'boolean' ? parsed.showCues : true,
+      showMeetingIndicator:
+        typeof parsed.showMeetingIndicator === 'boolean' ? parsed.showMeetingIndicator : true,
+      overlayOpacity:
+        typeof parsed.overlayOpacity === 'number' ? clampOverlayOpacity(parsed.overlayOpacity) : fallback.overlayOpacity,
+      overlayPosition: readOverlayPosition(parsed.overlayPosition),
+      shortcuts: readShortcutBindings(parsed.shortcuts),
+      dictateMode: readDictateMode(parsed.dictateMode),
       launchAtLogin: typeof parsed.launchAtLogin === 'boolean' ? parsed.launchAtLogin : false,
     }
   } catch {
@@ -180,7 +229,26 @@ export function useSettingsState() {
   const [input, setInput] = useState<InputDevice>(initial.input)
   const [cues, setCues] = useState(initial.cues)
   const [showCues, setShowCues] = useState(initial.showCues)
+  const [showMeetingIndicator, setShowMeetingIndicator] = useState(initial.showMeetingIndicator)
+  const [overlayOpacity, setOverlayOpacityState] = useState(initial.overlayOpacity)
+  const [overlayPosition, setOverlayPosition] = useState<OverlayPosition>(initial.overlayPosition)
+  const [shortcuts, setShortcutsState] = useState<ShortcutBindings>(initial.shortcuts)
+  const [dictateMode, setDictateMode] = useState<DictateMode>(initial.dictateMode)
   const [launchAtLogin, setLaunchAtLogin] = useState(initial.launchAtLogin)
+
+  function setOverlayOpacity(next: number) {
+    setOverlayOpacityState(clampOverlayOpacity(next))
+  }
+
+  function setShortcut(id: ShortcutId, chord: ShortcutChord) {
+    setShortcutsState((current) => ({ ...current, [id]: chord }))
+  }
+
+  function resetShortcuts() {
+    setShortcutsState({ ...defaultShortcutBindings })
+    setDictateMode(defaultDictateMode())
+  }
+
   const [keys, setKeys] = useState<Record<string, string>>({})
   const [savedKeys, setSavedKeys] = useState<Record<string, boolean>>({})
   const [engineError, setEngineError] = useState<string | null>(null)
@@ -195,10 +263,37 @@ export function useSettingsState() {
       input,
       cues,
       showCues,
+      showMeetingIndicator,
+      overlayOpacity,
+      overlayPosition,
+      shortcuts,
+      dictateMode,
       launchAtLogin,
     }
     localStorage.setItem(storageKey, JSON.stringify(payload))
-  }, [speechId, writerId, coachId, language, modelOverrides, input, cues, showCues, launchAtLogin])
+  }, [
+    speechId,
+    writerId,
+    coachId,
+    language,
+    modelOverrides,
+    input,
+    cues,
+    showCues,
+    showMeetingIndicator,
+    overlayOpacity,
+    overlayPosition,
+    shortcuts,
+    dictateMode,
+    launchAtLogin,
+  ])
+
+  useEffect(() => {
+    void window.crunchcall?.setDictateShortcut?.({
+      chord: shortcuts['dictate.global'],
+      mode: dictateMode,
+    })
+  }, [shortcuts, dictateMode])
 
   useEffect(() => {
     if (!engineAvailable()) return
@@ -328,6 +423,11 @@ export function useSettingsState() {
     setInput('default')
     setCues(defaultCues())
     setShowCues(true)
+    setShowMeetingIndicator(true)
+    setOverlayOpacityState(0.94)
+    setOverlayPosition('center')
+    setShortcutsState({ ...defaultShortcutBindings })
+    setDictateMode(defaultDictateMode())
     setLaunchAtLogin(false)
     setKeys({})
     setEngineError(null)
@@ -350,6 +450,17 @@ export function useSettingsState() {
     toggleCue,
     showCues,
     setShowCues,
+    showMeetingIndicator,
+    setShowMeetingIndicator,
+    overlayOpacity,
+    setOverlayOpacity,
+    overlayPosition,
+    setOverlayPosition,
+    shortcuts,
+    setShortcut,
+    resetShortcuts,
+    dictateMode,
+    setDictateMode,
     launchAtLogin,
     setLaunchAtLogin,
     theme: preference,

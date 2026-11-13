@@ -95,6 +95,7 @@ const plans: {
       'Capture on this PC, with no guest in the meeting',
       'On-device transcription',
       'Local summaries and action items',
+      'Ask across your notes (local search)',
       'Searchable history',
       'No account required',
     ],
@@ -122,13 +123,14 @@ const plans: {
     name: 'Your key',
     price: 'Optional',
     cadence: 'text only',
-    blurb: 'Bring Claude or OpenAI when you want a bigger model for the notes.',
+    blurb: 'Bring Claude or OpenAI when you want a bigger model for the notes and for Ask.',
     cta: 'Set up a key',
     surface: 'settings',
     featured: false,
     items: [
       'Your Claude or OpenAI key',
       'Used for text, never for audio',
+      'Richer Ask answers from your notes',
       'Audio still stays on the device',
       'Keys stay in Windows Credential Manager',
       'Off unless you turn it on',
@@ -206,7 +208,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
     const pageScrolls = document.documentElement.scrollHeight > window.innerHeight + 2
     if (pageScrolls) window.scrollTo({ top, behavior })
     else target.scrollIntoView({ behavior, block: 'start' })
-    if (id === 'coaching' || id === 'notes' || id === 'product') {
+    if (id === 'coaching' || id === 'notes' || id === 'ask' || id === 'product') {
       setArrived(null)
       window.requestAnimationFrame(() => setArrived(id))
     }
@@ -245,7 +247,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                 go('product')
               }}
             >
-              Coaching & notes
+              Coaching, notes & Ask
             </a>
             <a
               href="#pricing"
@@ -275,7 +277,8 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
             </h1>
             <p>
               A local-first notepad for the meetings you are already in. It transcribes on this PC, nudges you
-              while it still matters, and leaves owners and next steps when you hang up.
+              while it still matters, leaves owners and next steps when you hang up, and lets Ask answer from
+              those notes anytime.
             </p>
             <div className="lp-hero-actions">
               <button type="button" className="lp-btn lp-btn-dark" onClick={() => onOpenApp('list')}>
@@ -336,8 +339,8 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
           </h2>
           <p>
             annotated helps you leave a meeting with the notes, the owners, and the next step. No bot joins Zoom,
-            Meet, or Teams. Transcription and the first summary run on this PC. A bigger model is optional, and it
-            only ever sees text.
+            Meet, or Teams. Transcription and the first summary run on this PC. Ask answers from that same local
+            history. A bigger model is optional, and it only ever sees text.
           </p>
           <div className="lp-stats">
             <article>
@@ -359,7 +362,10 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
           <div className="lp-block">
             <Kicker>Capabilities</Kicker>
             <h2 id="product-title">The tools a meeting needs, without another guest.</h2>
-            <p className="lp-sub">Coaching while the call is still open. Notes, owners, and next steps when it is over.</p>
+            <p className="lp-sub">
+              Coaching while the call is still open. Notes when it is over. Ask whenever you need an answer from
+              what you already captured.
+            </p>
           </div>
           <div className="lp-feature-scene">
             <div className="lp-feature-grid lp-reveal lp-reveal-stagger">
@@ -394,6 +400,47 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                 </div>
               </article>
             </div>
+
+            <article
+              className={
+                arrived === 'ask' || arrived === 'product'
+                  ? 'lp-feature-card lp-feature-ask is-arrived lp-reveal'
+                  : 'lp-feature-card lp-feature-ask lp-reveal'
+              }
+              id="ask"
+            >
+              <div className="lp-ask-copy">
+                <h3>Ask your notes</h3>
+                <p>
+                  The small chat bar at the bottom of the app answers from meetings, notes, actions, and calendar
+                  already on this PC. Tag a person, meeting, or project when you want a tighter answer — without
+                  shipping audio off the machine.
+                </p>
+                <ul className="lp-ask-points">
+                  <li>Who owns the open next steps?</li>
+                  <li>What did we decide on pricing?</li>
+                  <li>What is coming up this week?</li>
+                </ul>
+              </div>
+              <div className="lp-ask-mock" aria-hidden="true">
+                <div className="lp-ask-panel">
+                  <header className="lp-ask-head">
+                    <span>Ask</span>
+                    <em>From your notes</em>
+                  </header>
+                  <div className="lp-ask-thread">
+                    <p className="lp-ask-user">Who owns the open next steps?</p>
+                    <p className="lp-ask-reply">
+                      <strong>Sam</strong> owns the Lumen checklist (Tue). <strong>Rae</strong> walks their admin
+                      through settings before the 24th.
+                    </p>
+                  </div>
+                  <div className="lp-ask-bar">
+                    <span>Ask about your notes…</span>
+                  </div>
+                </div>
+              </div>
+            </article>
           </div>
         </section>
 
@@ -460,6 +507,14 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                   <td>No</td>
                   <td>No</td>
                   <td>No</td>
+                </tr>
+                <tr>
+                  <th scope="row">Ask across notes on this PC</th>
+                  <td className="is-us">Yes</td>
+                  <td>Cloud chat</td>
+                  <td>Cloud chat</td>
+                  <td>Cloud chat</td>
+                  <td>Cloud chat</td>
                 </tr>
                 <tr>
                   <th scope="row">Account required</th>
@@ -559,6 +614,15 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                 }}
               >
                 Coaching & notes
+              </a>
+              <a
+                href="#ask"
+                onClick={(event) => {
+                  event.preventDefault()
+                  go('ask')
+                }}
+              >
+                Ask
               </a>
               <a
                 href="#pricing"
