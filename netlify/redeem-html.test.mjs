@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { restoreRedeemHtml } from './redeem-html.js'
+import { restoreRedeemHtml } from './edge-functions/redeem-html.js'
 
 test('a supabase text/plain rewrite is restored to html and the sandbox policy is dropped', async () => {
   const rewritten = new Response('<!doctype html><title>Redeem</title>', {
