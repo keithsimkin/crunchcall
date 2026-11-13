@@ -4,13 +4,16 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, expect, test } from 'bun:test'
 import {
+  DEFAULT_GOOGLE_CLIENT_ID,
   GOOGLE_SCOPE,
   MICROSOFT_SCOPE,
   authUrl,
   createCalendarAccounts,
   createPkce,
+  loadClientIds,
   mapGoogleEvents,
   mapMicrosoftEvents,
+  resolveOAuthConfig,
 } from './calendar-accounts.cjs'
 
 const DAY = 86_400_000
@@ -132,6 +135,7 @@ test('outlook events treat timezone-less times as UTC', () => {
 test('google connect stores the refresh token sealed and can sync events', async () => {
   const { accounts, file } = createTestAccounts({
     async openExternal(url) {
+      expect(new URL(url).searchParams.has('client_secret')).toBe(false)
       await hitCallback(url, { code: 'auth-code' })
     },
     async fetch(url, init) {
@@ -140,7 +144,7 @@ test('google connect stores the refresh token sealed and can sync events', async
         const body = String(init.body)
         expect(body).toContain('code=auth-code')
         expect(body).toContain('code_verifier=')
-        expect(body).not.toContain('client_secret')
+        expect(body).toContain('client_secret=google-secret-value')
         return json({ access_token: 'access-token', refresh_token: 'refresh-secret-value', expires_in: 3600 })
       }
       if (target.startsWith('https://www.googleapis.com/calendar/v3/users/me/calendarList')) {
@@ -253,6 +257,190 @@ test('cancel closes the sign-in without saving a token', async () => {
   })
 })
 
+test('google refresh sends the client secret and keeps it off the browser url', async () => {
+  const { accounts } = createTestAccounts({
+    async openExternal(url) {
+      expect(new URL(url).searchParams.has('client_secret')).toBe(false)
+      await hitCallback(url, { code: 'auth-code' })
+    },
+    async fetch(url, init) {
+      const target = String(url)
+      if (target === 'https://oauth2.googleapis.com/token') {
+        const body = String(init.body)
+        expect(body).toContain('client_secret=google-secret-value')
+        if (body.includes('grant_type=refresh_token')) {
+          expect(body).toContain('refresh_token=refresh-secret-value')
+          expect(body).not.toContain('code=')
+          return json({ access_token: 'access-2', expires_in: 3600 })
+        }
+        return json({ access_token: 'access-token', refresh_token: 'refresh-secret-value', expires_in: 1 })
+      }
+      if (target.startsWith('https://www.googleapis.com/calendar/v3/users/me/calendarList')) {
+        return json({ items: [{ id: 'ada@gmail.com', summary: 'Ada', primary: true, selected: true }] })
+      }
+      if (target.startsWith('https://www.googleapis.com/calendar/v3/calendars/')) {
+        expect(init.headers.Authorization).toBe('Bearer access-2')
+        return json({ items: [] })
+      }
+      throw new Error(`unexpected ${target}`)
+    },
+  })
+  expect((await accounts.connect('google')).ok).toBe(true)
+  const synced = await accounts.sync('google', [{ id: 'ada@gmail.com', name: 'Ada' }], {
+    start: Date.parse('2026-11-12T00:00:00Z'),
+    end: Date.parse('2026-11-13T00:00:00Z'),
+  })
+  expect(synced).toEqual({ ok: true, events: [] })
+})
+
+test('a missing google client secret is reported as not set up', async () => {
+  const { accounts, file } = createTestAccounts({
+    clientIds: { google: 'google-client', googleSecret: '', microsoft: '' },
+    async openExternal() {
+      throw new Error('browser should stay closed')
+    },
+    async fetch() {
+      return json({ error: 'invalid_client', error_description: 'The client secret is missing.' }, 401)
+    },
+  })
+  expect(accounts.status().configured).toEqual({ google: false, microsoft: false })
+  expect(await accounts.connect('google')).toEqual({
+    ok: false,
+    error: 'Google sign-in is not set up in this copy of annotated yet.',
+  })
+  expect(fs.existsSync(file)).toBe(false)
+})
+
+test('google reports a rejected client secret without saving a token', async () => {
+  const { accounts, file } = createTestAccounts({
+    async openExternal(url) {
+      await hitCallback(url, { code: 'auth-code' })
+    },
+    async fetch() {
+      return json({ error: 'invalid_request', error_description: 'client_secret is missing.' }, 400)
+    },
+  })
+  expect(await accounts.connect('google')).toEqual({
+    ok: false,
+    error: 'Google sign-in is not set up in this copy of annotated yet.',
+  })
+  expect(fs.existsSync(file)).toBe(false)
+})
+
+test('outlook token requests omit the google client secret', async () => {
+  const { accounts } = createTestAccounts({
+    async openExternal(url) {
+      expect(new URL(url).searchParams.has('client_secret')).toBe(false)
+      await hitCallback(url, { code: 'auth-code' })
+    },
+    async fetch(url, init) {
+      const target = String(url)
+      if (target === 'https://login.microsoftonline.com/common/oauth2/v2.0/token') {
+        const body = String(init.body)
+        expect(body).not.toContain('client_secret')
+        if (body.includes('grant_type=refresh_token')) {
+          expect(body).toContain('scope=')
+          return json({ access_token: 'ms-access-2', expires_in: 3600 })
+        }
+        return json({ access_token: 'ms-access', refresh_token: 'ms-refresh', expires_in: 1 })
+      }
+      if (target.startsWith('https://graph.microsoft.com/v1.0/me/calendars?')) {
+        expect(init.headers.Authorization).toBe('Bearer ms-access')
+        return json({
+          value: [{ id: 'cal-1', name: 'Calendar', isDefaultCalendar: true, owner: { address: 'ada@outlook.com' } }],
+        })
+      }
+      if (target.includes('/calendarView')) {
+        expect(init.headers.Authorization).toBe('Bearer ms-access-2')
+        return json({ value: [] })
+      }
+      throw new Error(`unexpected ${target}`)
+    },
+  })
+  const connected = await accounts.connect('microsoft')
+  expect(connected.ok).toBe(true)
+  const synced = await accounts.sync('microsoft', [{ id: 'cal-1', name: 'Calendar' }], {
+    start: Date.parse('2026-11-12T00:00:00Z'),
+    end: Date.parse('2026-11-13T00:00:00Z'),
+  })
+  expect(synced).toEqual({ ok: true, events: [] })
+})
+
+test('oauth config prefers env, then the local file, then the packaged file', () => {
+  const resolved = resolveOAuthConfig({
+    env: {
+      CRUNCHCALL_GOOGLE_CLIENT_ID: '',
+      CRUNCHCALL_GOOGLE_CLIENT_SECRET: 'env-secret-value',
+      CRUNCHCALL_MICROSOFT_CLIENT_ID: '   ',
+    },
+    local: {
+      googleClientId: 'local-google-client',
+      googleClientSecret: 'local-secret-value',
+      microsoftClientId: 'local-ms-client',
+    },
+    packaged: {
+      googleClientId: 'pack-google-client',
+      googleClientSecret: 'pack-secret-value',
+      microsoftClientId: 'pack-ms-client',
+    },
+  })
+  expect(resolved).toEqual({
+    googleClientId: 'local-google-client',
+    googleClientSecret: 'env-secret-value',
+    microsoftClientId: 'local-ms-client',
+  })
+
+  expect(resolveOAuthConfig()).toEqual({
+    googleClientId: DEFAULT_GOOGLE_CLIENT_ID,
+    googleClientSecret: '',
+    microsoftClientId: '',
+  })
+  expect(
+    resolveOAuthConfig({
+      env: { CRUNCHCALL_GOOGLE_CLIENT_SECRET: 'bad secret' },
+      packaged: { googleClientSecret: 'pack-secret-value' },
+    }).googleClientSecret,
+  ).toBe('pack-secret-value')
+})
+
+test('packaged oauth.json is used when env and the local file are empty', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crunchcall-oauth-'))
+  temps.push(dir)
+  fs.writeFileSync(
+    path.join(dir, 'oauth.example.json'),
+    JSON.stringify({ googleClientId: 'example-client-should-not-load', googleClientSecret: 'example-secret-value' }),
+  )
+  fs.writeFileSync(
+    path.join(dir, 'oauth.json'),
+    JSON.stringify({
+      googleClientId: 'pack-google-client',
+      googleClientSecret: 'pack-secret-value',
+      microsoftClientId: '',
+    }),
+  )
+  expect(loadClientIds(dir, {})).toEqual({
+    google: 'pack-google-client',
+    googleSecret: 'pack-secret-value',
+    microsoft: '',
+  })
+  fs.writeFileSync(
+    path.join(dir, 'oauth.local.json'),
+    JSON.stringify({ googleClientSecret: 'local-secret-value', microsoftClientId: 'local-ms-client' }),
+  )
+  expect(loadClientIds(dir, { CRUNCHCALL_GOOGLE_CLIENT_ID: 'env-google-client' })).toEqual({
+    google: 'env-google-client',
+    googleSecret: 'local-secret-value',
+    microsoft: 'local-ms-client',
+  })
+})
+
+test('the example oauth file publishes the google client id and leaves the secret empty', () => {
+  const example = JSON.parse(fs.readFileSync(new URL('./oauth.example.json', import.meta.url), 'utf8'))
+  expect(example.googleClientId).toBe(DEFAULT_GOOGLE_CLIENT_ID)
+  expect(example.googleClientSecret).toBe('')
+  expect(example.microsoftClientId).toBe('')
+})
+
 test('sign-in without a client id explains that this copy is not set up', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crunchcall-cal-'))
   temps.push(dir)
@@ -272,7 +460,7 @@ test('sign-in without a client id explains that this copy is not set up', async 
   })
 })
 
-function createTestAccounts({ openExternal, fetch }) {
+function createTestAccounts({ openExternal, fetch, clientIds }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crunchcall-cal-'))
   temps.push(dir)
   const file = path.join(dir, 'accounts.json')
@@ -282,7 +470,7 @@ function createTestAccounts({ openExternal, fetch }) {
     decrypt: open,
     openExternal,
     fetch,
-    clientIds: { google: 'google-client', microsoft: 'ms-client' },
+    clientIds: clientIds || { google: 'google-client', googleSecret: 'google-secret-value', microsoft: 'ms-client' },
   })
   return { accounts, file }
 }
@@ -297,10 +485,10 @@ function open(encoded) {
   return text.slice(3)
 }
 
-function json(body) {
+function json(body, status = 200) {
   return {
-    ok: true,
-    status: 200,
+    ok: status >= 200 && status < 300,
+    status,
     headers: {},
     async text() {
       return JSON.stringify(body)

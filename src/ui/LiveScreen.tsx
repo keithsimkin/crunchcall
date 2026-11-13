@@ -7,7 +7,7 @@ import { appendUtterance, createLiveMeeting, finishMeeting, listUtterances, read
 import { toUtterance, type EngineUtterance } from '../features/desk/present'
 import { draftFromLines, parseWriterNotes, renderMarkdown } from '../features/notes/draft'
 import type { CueId } from './settingsState'
-import type { LiveLine } from './fixtures'
+import { productLive, type LiveLine } from './fixtures'
 
 type LiveScreenProps = {
   title?: string
@@ -18,6 +18,9 @@ type LiveScreenProps = {
   inputDevice: string
   language: 'auto' | 'english'
   showCues: boolean
+  showMeetingIndicator: boolean
+  overlayOpacity: number
+  overlayPosition: 'center' | 'top-right' | 'top-left' | 'bottom-center'
   cues: Record<CueId, boolean>
   unlocked: boolean
   onUnlock: () => void
@@ -52,6 +55,9 @@ export function LiveScreen({
   inputDevice,
   language,
   showCues,
+  showMeetingIndicator,
+  overlayOpacity,
+  overlayPosition,
   cues,
   unlocked,
   onUnlock,
@@ -73,6 +79,7 @@ export function LiveScreen({
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(meetingId ?? null)
+  const [nubDismissed, setNubDismissed] = useState(false)
   const meetingRef = useRef<string | null>(meetingId ?? null)
   const startedAt = useRef(Date.now())
   const listenRef = useRef<ListenHandle | null>(null)
@@ -83,6 +90,7 @@ export function LiveScreen({
   const coachRef = useRef(coachId)
   const speechRef = useRef(speechId)
   const languageRef = useRef(language)
+  const endRef = useRef<() => Promise<void>>(async () => {})
   const speechBlocked = useRef(false)
   const chunking = useRef(false)
   const ending = useRef(false)
@@ -123,6 +131,10 @@ export function LiveScreen({
           if (!stopped) {
             linesRef.current = prior
             setLines(prior)
+            // Demo Product sync already has fixture cues; show them without waiting on coach.scan.
+            if (meeting.id === 'live-product' && prior.length > 0) {
+              seedDemoCues(meeting.id, prior)
+            }
           }
         }
         setStatus(armed ? 'Listening…' : 'Paused.')
@@ -174,18 +186,73 @@ export function LiveScreen({
     }, 8000)
     return () => {
       window.clearInterval(tick)
-      void window.crunchcall?.setOverlay?.(null)
+      void window.crunchcall?.setOverlaySession?.(null)
     }
   }, [])
 
   useEffect(() => {
-    if (!unlocked || !overlayOn || !showCues) {
-      void window.crunchcall?.setOverlay?.(null)
+    if (armed || sessionId) setNubDismissed(false)
+  }, [armed, sessionId])
+
+  useEffect(() => {
+    const desktop = Boolean(window.crunchcall?.setOverlaySession)
+    if (!desktop) return
+    if (!showMeetingIndicator || nubDismissed || ending.current || !(sessionId || armed)) {
+      void window.crunchcall?.setOverlaySession?.(null)
       return
     }
-    const lead = cuesOnScreen[0]
-    void window.crunchcall?.setOverlay?.(lead ? { label: lead.label, message: lead.message } : null)
-  }, [unlocked, overlayOn, showCues, cuesOnScreen])
+    const lead = unlocked && overlayOn && showCues ? cuesOnScreen[0] : undefined
+    void window.crunchcall?.setOverlaySession?.({
+      meetingId: sessionId ?? meetingRef.current ?? '',
+      title: title || 'Live meeting',
+      elapsed,
+      listening: armed,
+      opacity: overlayOpacity,
+      position: overlayPosition,
+      cue: lead ? { label: lead.label, message: lead.message } : null,
+      lines: lines.slice(-3).map((line) => ({
+        id: line.id,
+        speaker: line.speaker,
+        text: line.text,
+      })),
+    })
+  }, [
+    showMeetingIndicator,
+    nubDismissed,
+    sessionId,
+    armed,
+    title,
+    elapsed,
+    overlayOpacity,
+    overlayPosition,
+    unlocked,
+    overlayOn,
+    showCues,
+    cuesOnScreen,
+    lines,
+  ])
+
+  useEffect(() => {
+    return window.crunchcall?.onOverlayAction?.((action) => {
+      if (action === 'dismiss') {
+        setNubDismissed(true)
+        return
+      }
+      if (action === 'pause') {
+        setArmed(false)
+        setStatus('Paused.')
+        return
+      }
+      if (action === 'resume') {
+        setArmed(true)
+        setStatus('Listening…')
+        return
+      }
+      if (action === 'end') {
+        void endRef.current()
+      }
+    })
+  }, [])
 
   async function transcribeChunk(force = false) {
     if (ending.current && !force) return
@@ -249,16 +316,38 @@ export function LiveScreen({
     await refreshCues(next)
   }
 
+  function seedDemoCues(id: string, next: LiveLine[]) {
+    if (!showCuesRef.current || id !== 'live-product' || next.length === 0) {
+      if (!showCuesRef.current) setCuesOnScreen([])
+      return
+    }
+    const flags = cuesRef.current
+    const visible = productLive.cues.filter((cue) => {
+      if (cue.label === 'Missing date') return flags.date !== false
+      if (cue.label === 'Stacked questions') return flags.stacked !== false
+      if (cue.label === 'Talk ratio') return flags.talk !== false
+      return true
+    })
+    setCuesOnScreen(visible)
+  }
+
   async function refreshCues(next: LiveLine[]) {
-    if (!engineAvailable() || !showCuesRef.current) {
+    if (!showCuesRef.current) {
       setCuesOnScreen([])
+      return
+    }
+    if (!engineAvailable()) {
+      seedDemoCues(meetingRef.current ?? '', next)
       return
     }
     const result = await callEngine('coach.scan', {
       lines: next.map((line) => `${line.speaker}: ${line.text}`),
       pack: coachRef.current,
     })
-    if (!result.ok || !result.result || typeof result.result !== 'object') return
+    if (!result.ok || !result.result || typeof result.result !== 'object') {
+      seedDemoCues(meetingRef.current ?? '', next)
+      return
+    }
     const raw = (result.result as { cues?: { kind?: string; message?: string }[] }).cues ?? []
     const flags = cuesRef.current
     const visible = raw
@@ -268,6 +357,10 @@ export function LiveScreen({
         label: cueLabel[cue.kind ?? ''] ?? 'Cue',
         message: cue.message ?? '',
       }))
+    if (visible.length === 0) {
+      seedDemoCues(meetingRef.current ?? '', next)
+      return
+    }
     setCuesOnScreen(visible)
   }
 
@@ -283,6 +376,7 @@ export function LiveScreen({
     if (!id || busy) return
     setBusy(true)
     ending.current = true
+    void window.crunchcall?.setOverlaySession?.(null)
     setStatus('Writing notes…')
     const waitUntil = Date.now() + 20000
     while (chunking.current && Date.now() < waitUntil) {
@@ -313,9 +407,11 @@ export function LiveScreen({
       onFinished(id)
     } catch (error) {
       setBusy(false)
+      ending.current = false
       setStatus(error instanceof Error ? error.message : 'Could not save the notes.')
     }
   }
+  endRef.current = end
 
   const lead = unlocked && overlayOn && showCues ? cuesOnScreen[0] : undefined
 

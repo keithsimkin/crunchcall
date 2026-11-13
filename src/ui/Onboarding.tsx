@@ -2,8 +2,10 @@ import { useEffect, useId, useRef, useState, type ChangeEvent, type RefObject } 
 import type { CalendarEvent } from '../features/calendar/ics'
 import type { CalendarState } from '../features/calendar/store'
 import { connectUrl, importCalendarText, setAskToStart, setCalendarError, getState } from '../features/calendar/store'
+import { calendarIntro } from '../features/calendar/connectCopy'
 import { AccountConnect } from './AccountConnect'
 import { formatWhen } from '../features/calendar/format'
+import { useCalendarSignIn } from './useCalendar'
 import { LogoMark } from './icons'
 import {
   givenName,
@@ -391,13 +393,16 @@ function StepBody({
   const hello = trimmed ? `You're set, ${givenName(trimmed)}.` : "You're set."
   const next = upcoming[0]
   const client = mcpClientById(clientId)
+  const { signIn } = useCalendarSignIn()
 
   if (step === 'name') {
     return (
       <div className="ob-body">
         <h2 id={titleId}>What should we call you?</h2>
         <p className="ob-lede">
-          Your name stays on this PC. It shows in the sidebar, and it is written into the prompt you paste into Claude, Cursor, or ChatGPT.
+          Your name stays on this PC. It shows in the sidebar, and Ask — the chat bar at the bottom — can address you
+          when it answers from your notes. The same name is written into the prompt you paste into Claude, Cursor, or
+          ChatGPT.
         </p>
         <label className="field ob-field">
           <span>Your name</span>
@@ -425,14 +430,10 @@ function StepBody({
     return (
       <div className="ob-body">
         <h2 id={titleId}>Sync the next two weeks</h2>
-        <p className="ob-lede">
-          {desktop
-            ? 'Sign in with Google or Outlook, or paste a private link from Apple. annotated reads the meetings on this PC and asks before it turns on.'
-            : 'Paste a private calendar link, or import a file. A webcal link is fine. Google and Outlook sign-in is in the desktop app.'}
-        </p>
+        <p className="ob-lede">{calendarIntro(desktop, signIn)}</p>
         <AccountConnect plain />
         <label className="field ob-field">
-          <span>{desktop ? 'Apple or another calendar' : 'Calendar link'}</span>
+          <span>{desktop ? 'Apple, Outlook, or another calendar' : 'Calendar link'}</span>
           <input
             ref={urlRef}
             value={url}
@@ -478,7 +479,9 @@ function StepBody({
       <div className="ob-body">
         <h2 id={titleId}>Copy a prompt for your assistant</h2>
         <p className="ob-lede">
-          Paste this into {client.name}. It adds the local annotated server and asks for your open next steps. The server is read-only and stays on this PC.
+          Paste this into {client.name}. It adds the local annotated server and asks for your open next steps. The
+          server is read-only and stays on this PC. This is optional — Ask, the chat bar inside the app, already
+          answers from your notes without it.
         </p>
         <div className="ob-clients" role="tablist" aria-label="Assistant">
           {mcpClients.map((item) => (
@@ -519,7 +522,18 @@ function StepBody({
   return (
     <div className="ob-body">
       <h2 id={titleId}>{hello}</h2>
-      <p className="ob-lede">Annotate every call. You can run this setup again from Settings → This PC.</p>
+      <p className="ob-lede">
+        Annotate every call. Ask sits at the bottom of every screen and answers from the meetings, notes, actions, and
+        calendar already on this PC — who owns a next step, what you decided, what is coming up. You can run this setup
+        again from Settings → This PC.
+      </p>
+      <div className="ob-ask-card" role="note">
+        <p className="set-label">Ask</p>
+        <p className="help">
+          Type in the small bar, or tag a person, meeting, or project when you want a tighter answer. It stays with your
+          notes; a cloud writer is optional under Settings → Notes.
+        </p>
+      </div>
       <div className="ob-checks">
         <Check label="Name" value={trimmed || 'Add one in Settings'} onClick={() => onJump(0)} />
         <Check label="Calendar" value={calendarLine} onClick={() => onJump(1)} />

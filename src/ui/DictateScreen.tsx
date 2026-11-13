@@ -4,15 +4,17 @@ import { loadDictationRows, onDictationsChange, wordCount } from '../features/di
 import { callEngine } from '../features/engines/call'
 import type { DictationRow } from './fixtures'
 import { MoreIcon, SearchIcon, ShareIcon } from './icons'
+import { chordLabels, defaultShortcutBindings, formatChord, type DictateMode, type ShortcutChord } from './shortcuts'
 import { TargetReel } from './TargetReel'
 
 type DictateScreenProps = {
   speechId: string
+  chord?: ShortcutChord
+  mode?: DictateMode
 }
 
 const dayOrder = ['Today', 'Yesterday', 'Earlier'] as const
 const previewLimit = 160
-const hotkeys = ['Ctrl', 'Win']
 
 function formatWords(count: number): string {
   return count.toLocaleString('en-US')
@@ -58,8 +60,14 @@ function HistoryEntry({ row }: { row: DictationRow }) {
   )
 }
 
-export function DictateScreen({ speechId }: DictateScreenProps) {
+export function DictateScreen({
+  speechId,
+  chord = defaultShortcutBindings['dictate.global'],
+  mode = 'toggle',
+}: DictateScreenProps) {
   const speech = engineById(speechId) ?? engineById(engineDefaults.speech)
+  const hotkeys = chordLabels(chord)
+  const how = mode === 'hold' ? 'Hold' : 'Press'
   const [lines, setLines] = useState<DictationRow[]>([])
   const [query, setQuery] = useState('')
   const [message, setMessage] = useState('')
@@ -113,7 +121,7 @@ export function DictateScreen({ speechId }: DictateScreenProps) {
       <div className="hint-bar">
         <div className="hint-lead">
           <p id="dictate-title">
-            Press{' '}
+            {how}{' '}
             {hotkeys.map((key) => (
               <kbd key={key}>{key}</kbd>
             ))}{' '}
@@ -221,7 +229,9 @@ export function DictateScreen({ speechId }: DictateScreenProps) {
       </div>
 
       {groups.length === 0 ? (
-        <p className="empty">{query ? 'No dictations match that.' : 'Press Ctrl + Win anywhere to start your history.'}</p>
+        <p className="empty">
+          {query ? 'No dictations match that.' : `${how} ${formatChord(chord)} anywhere to start your history.`}
+        </p>
       ) : (
         groups.map((group) => (
           <section key={group.day} className="day-block">

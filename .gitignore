@@ -1,3 +1,11 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# AppSumo agent scratch
+.appsumo-*
+
 # Logs
 logs
 *.log
@@ -12,10 +20,12 @@ dist
 dist-ssr
 *.local
 electron/oauth.local.json
+electron/oauth.json
 licensing/private.pem
 licensing/orders.json
 licensing/users.json
 native/target
+.crunchcall-data
 release
 
 # Editor directories and files

@@ -10,6 +10,7 @@ import {
   type CalendarProvider,
   type CalendarSignIn,
 } from '../features/calendar/store'
+import { accountConnectCopy } from '../features/calendar/connectCopy'
 import { useCalendarClock } from './useCalendar'
 
 type Picker = {
@@ -103,34 +104,34 @@ export function AccountConnect({ plain = false }: { plain?: boolean }) {
     }
   }
 
-  const ready = signIn?.configured
-  const showSetupNote = signIn !== null && !ready?.google && !ready?.microsoft
+  const copy = accountConnectCopy(signIn)
+  const showGoogle = copy.showGoogle && !signIn?.connected.google
+  const showMicrosoft = copy.showMicrosoft && !signIn?.connected.microsoft
+  const showActions = showGoogle || showMicrosoft || signingIn
 
   return (
     <div className={plain ? 'cal-connect' : 'cal-block'}>
-      <p className="set-label">Google or Outlook</p>
-      <p className="help">
-        {showSetupNote
-          ? 'Sign-in is not set up in this copy yet. A private calendar link still works.'
-          : 'Sign in once. annotated reads the calendars you pick and keeps that permission on this PC.'}
-      </p>
-      <div className="cal-actions">
-        {ready?.google && !signIn?.connected.google ? (
-          <button type="button" className="btn small primary" disabled={busy !== null} onClick={() => void connect('google')}>
-            {busy === 'google' && signingIn ? 'Waiting for Google…' : 'Connect Google'}
-          </button>
-        ) : null}
-        {ready?.microsoft && !signIn?.connected.microsoft ? (
-          <button type="button" className="btn small primary" disabled={busy !== null} onClick={() => void connect('microsoft')}>
-            {busy === 'microsoft' && signingIn ? 'Waiting for Outlook…' : 'Connect Outlook'}
-          </button>
-        ) : null}
-        {signingIn ? (
-          <button type="button" className="btn small ghost" onClick={() => void cancelAccountConnect()}>
-            Cancel
-          </button>
-        ) : null}
-      </div>
+      <p className="set-label">{copy.title}</p>
+      <p className="help">{copy.help}</p>
+      {showActions ? (
+        <div className="cal-actions">
+          {showGoogle ? (
+            <button type="button" className="btn small primary" disabled={busy !== null} onClick={() => void connect('google')}>
+              {busy === 'google' && signingIn ? 'Waiting for Google…' : 'Connect Google'}
+            </button>
+          ) : null}
+          {showMicrosoft ? (
+            <button type="button" className="btn small primary" disabled={busy !== null} onClick={() => void connect('microsoft')}>
+              {busy === 'microsoft' && signingIn ? 'Waiting for Outlook…' : 'Connect Outlook'}
+            </button>
+          ) : null}
+          {signingIn ? (
+            <button type="button" className="btn small ghost" onClick={() => void cancelAccountConnect()}>
+              Cancel
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {signIn?.connected.google ? (
         <AccountRow
           label="Google"

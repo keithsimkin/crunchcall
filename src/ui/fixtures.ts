@@ -56,6 +56,54 @@ export const listedDictations: DictationRow[] = [
     day: 'Today',
     text: "Also, for the 'Visit site' link, I want it to be underlined with a small exit icon so it reads as leaving the app.",
   },
+  {
+    id: 'd5',
+    at: '11:04 AM',
+    day: 'Today',
+    text: 'Follow up with Maya on the three-tier deck. Confirm annual before she sends, and keep the pilot monthly unless annual is locked.',
+  },
+  {
+    id: 'd6',
+    at: '10:42 AM',
+    day: 'Today',
+    text: 'Note for myself: Jon owns the Teams share test Thursday morning. Priya freezes customer copy the same day. I send the final launch date Friday.',
+  },
+  {
+    id: 'd7',
+    at: '9:15 AM',
+    day: 'Today',
+    text: 'Draft reply to Marcus: the invoice is correct, the portal label is wrong, Dana is fixing it Thursday, and I will send the revised summary Friday.',
+  },
+  {
+    id: 'd8',
+    at: '4:55 PM',
+    day: 'Yesterday',
+    text: 'Priya takes the launch sequence. I keep the Store relationship. Put the date in writing by Friday so she can plan.',
+  },
+  {
+    id: 'd9',
+    at: '2:20 PM',
+    day: 'Yesterday',
+    text: 'Hiring loop feedback: keep the take-home under two hours, drop the whiteboard warm-up, and have Nadia own the panel debrief.',
+  },
+  {
+    id: 'd10',
+    at: '11:48 AM',
+    day: 'Yesterday',
+    text: 'People read Company as enterprise on the pricing page. Nobody found annual. Move annual under a quiet toggle and rename Company to Business.',
+  },
+  {
+    id: 'd11',
+    at: '5:10 PM',
+    day: 'Earlier',
+    text: 'Investor update talking points: ARR up, burn flat, hiring paused until launch, Store screenshots Thursday, decision on date Friday.',
+  },
+  {
+    id: 'd12',
+    at: '3:32 PM',
+    day: 'Earlier',
+    text: 'Lumen checklist: overlay off for first customer call, Sam sends onboarding pack Tuesday, walk their admin through settings before the 24th.',
+  },
 ]
 
 export type LiveLine = {
@@ -294,7 +342,7 @@ export const starterProjects: ProjectFolder[] = [
     name: 'Studio',
     blurb: 'Retros, investor updates, and the weird ideas worth keeping.',
     accent: 'rose',
-    meetingIds: ['draft-retro', 'investor-update'],
+    meetingIds: ['draft-retro', 'investor-update', 'research-debrief'],
   },
   {
     id: 'atlas',
@@ -926,5 +974,168 @@ export const richNotes: Record<string, RichNotes> = {
       cites: [{ utteranceId: 'lp4', at: '19:44' }],
     },
     markdown: launchMarkdown,
+  },
+  'live-product': {
+    summary: 'Locking the overlay before Store screenshots. Jon asked about mic mix and Teams. A share-test day is still missing.',
+    takeaways: [
+      'Overlay must stay off screen share for the Store shoot.',
+      'You take Teams. Priya takes Zoom.',
+      'Tiny first, Small if the machine can hold it.',
+    ],
+    actions: [
+      { id: 'lpv1', text: 'Name a day for the share test', owner: 'You', due: null },
+      { id: 'lpv2', text: 'Run the Teams share test', owner: 'You', due: 'Thu' },
+    ],
+    utterances: productLive.lines.map((line) => ({
+      id: line.id,
+      at: line.at,
+      speaker: line.speaker,
+      you: line.you,
+      text: line.text,
+    })),
+    ask: [],
+    sampleReply: {
+      id: 'sample-live',
+      role: 'assistant',
+      text: 'Jon named a share test without a day. Ask for one before you leave.',
+    },
+    markdown: '# Product sync\n\nLive session. Overlay, Teams, and the share-test date are still open.\n',
+  },
+  hiring: {
+    summary: 'Design hiring loop is being written up. Keep the take-home short and drop the whiteboard warm-up.',
+    takeaways: [
+      'Take-home stays under two hours.',
+      'Whiteboard warm-up is cut.',
+      'Nadia owns the panel debrief.',
+    ],
+    actions: [
+      { id: 'h1', text: 'Rewrite the take-home brief', owner: 'Eli', due: 'Wed' },
+      { id: 'h2', text: 'Schedule the panel debrief', owner: 'Nadia', due: 'Fri' },
+    ],
+    utterances: [
+      {
+        id: 'hi1',
+        at: '04:10',
+        speaker: 'Nadia',
+        you: false,
+        text: 'The take-home is too long. Cap it at two hours.',
+      },
+      {
+        id: 'hi2',
+        at: '09:22',
+        speaker: 'Eli',
+        you: false,
+        text: 'I can rewrite the brief Wednesday and drop the whiteboard warm-up.',
+      },
+      {
+        id: 'hi3',
+        at: '15:40',
+        speaker: 'You',
+        you: true,
+        text: 'Nadia owns the panel debrief once candidates finish.',
+      },
+    ],
+    ask: [],
+    sampleReply: {
+      id: 'sample-hiring',
+      role: 'assistant',
+      text: 'Eli rewrites the take-home Wednesday. Nadia owns the panel debrief Friday.',
+    },
+    markdown:
+      '# Design hiring loop\n\nTake-home under two hours. No whiteboard warm-up. Nadia owns the panel debrief.\n',
+  },
+  'investor-update': {
+    summary: 'ARR is up and hiring stays flat until launch. Investors want the Store date in writing.',
+    takeaways: [
+      'ARR up, burn flat.',
+      'Hiring paused until launch ships.',
+      'Store screenshots Thursday; date decision Friday.',
+    ],
+    actions: [
+      { id: 'iv1', text: 'Send the metrics one-pager', owner: 'Nina', due: 'Wed' },
+      { id: 'iv2', text: 'Confirm the Store date in writing', owner: 'You', due: 'Fri' },
+    ],
+    utterances: [
+      {
+        id: 'iv1u',
+        at: '06:05',
+        speaker: 'Theo',
+        you: false,
+        text: 'ARR is the bright spot. Keep hiring flat until the launch lands.',
+      },
+      {
+        id: 'iv2u',
+        at: '18:22',
+        speaker: 'Nina',
+        you: false,
+        text: 'I will send the metrics one-pager Wednesday.',
+      },
+      {
+        id: 'iv3u',
+        at: '31:10',
+        speaker: 'You',
+        you: true,
+        text: 'Screenshots Thursday. Final date Friday.',
+      },
+    ],
+    ask: [],
+    sampleReply: {
+      id: 'sample-investor',
+      role: 'assistant',
+      text: 'ARR up, hiring flat until launch. Nina sends metrics Wednesday; you confirm the Store date Friday.',
+    },
+    markdown: '# Investor update — Q4\n\nARR up. Hiring flat. Store date Friday.\n',
+  },
+  'research-debrief': {
+    summary: 'People read Company as enterprise. Nobody found annual. Rename and hide annual behind a quiet toggle.',
+    takeaways: [
+      'Company reads as enterprise.',
+      'Annual is invisible on the page.',
+      'Business is the clearer label.',
+    ],
+    actions: [
+      { id: 'rd1', text: 'Rename Company to Business', owner: 'Maya', due: 'Tue' },
+      { id: 'rd2', text: 'Move annual behind a quiet toggle', owner: 'Theo', due: 'Wed' },
+      { id: 'rd3', text: 'Re-run five pricing-page sessions', owner: 'Maya', due: 'Fri' },
+    ],
+    utterances: [
+      {
+        id: 'rd1u',
+        at: '05:14',
+        speaker: 'Maya',
+        you: false,
+        text: 'Three people said Company means enterprise. Nobody clicked annual.',
+      },
+      {
+        id: 'rd2u',
+        at: '12:40',
+        speaker: 'Theo',
+        you: false,
+        text: 'Put annual under a quiet toggle. Rename Company to Business.',
+      },
+      {
+        id: 'rd3u',
+        at: '21:05',
+        speaker: 'You',
+        you: true,
+        text: 'Re-run five sessions after the rename before we freeze copy.',
+      },
+    ],
+    ask: [],
+    sampleReply: {
+      id: 'sample-research',
+      role: 'assistant',
+      text: 'Rename Company to Business, hide annual, and re-run five sessions before copy freeze.',
+    },
+    markdown: '# Research debrief — pricing page\n\nCompany reads as enterprise. Annual is hard to find.\n',
+  },
+  'draft-retro': {
+    summary: '',
+    takeaways: [],
+    actions: [],
+    utterances: [],
+    ask: [],
+    sampleReply: { id: 'sample-retro', role: 'assistant', text: 'Nothing captured yet.' },
+    markdown: '',
   },
 }

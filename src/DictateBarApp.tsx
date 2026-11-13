@@ -17,6 +17,8 @@ export default function DictateBarApp() {
           setOpen(next)
           if (!next) window.crunchcall?.hideDictateBar?.()
         }}
+        chord={settings.shortcuts['dictate.global']}
+        mode={settings.dictateMode}
       />
     </div>
   )

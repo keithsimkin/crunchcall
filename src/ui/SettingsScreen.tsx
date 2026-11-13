@@ -23,6 +23,7 @@ import {
 } from './icons'
 import {
   cueOptions,
+  overlayPositionOptions,
   settingsItems,
   supportItems,
   type SettingsHandlers,
@@ -277,7 +278,23 @@ function Listening({
   onSection: (next: SettingsSection) => void
   unlocked: boolean
 }) {
-  const { input, setInput, showCues, setShowCues, cues, toggleCue, language, setLanguage, speechId } = settings
+  const {
+    input,
+    setInput,
+    showCues,
+    setShowCues,
+    showMeetingIndicator,
+    setShowMeetingIndicator,
+    overlayOpacity,
+    setOverlayOpacity,
+    overlayPosition,
+    setOverlayPosition,
+    cues,
+    toggleCue,
+    language,
+    setLanguage,
+    speechId,
+  } = settings
   const speech = engineById(speechId) ?? engineById(engineDefaults.speech)
   const [mics, setMics] = useState([{ id: 'default', name: 'Default' }])
   useEffect(() => {
@@ -308,58 +325,99 @@ function Listening({
   const cuesOn = cueOptions.filter((cue) => cues[cue.id]).length
 
   return (
-    <div className="page-split">
+    <div className="page-stack">
       <div>
-      <Section label="Hearing the room">
-        <Row
-          title="Speech to text"
-          help={`${speech?.name ?? 'Whisper Tiny'} · ${speech ? whereLabel(speech) : 'On this PC'}`}
-        >
-          <button type="button" className="text-btn" onClick={() => onSection('speech')}>
-            Change
-          </button>
-        </Row>
-        <Row
-          title="Input"
-          help={
-            input === 'default'
-              ? 'Using the default input on this PC. annotated never joins the call.'
-              : `Using ${current?.name}. annotated never joins the call.`
-          }
-        >
-          <select
-            className="input-select"
-            aria-label="Input"
-            value={mics.some((item) => item.id === input) ? input : 'default'}
-            onChange={(event) => setInput(event.target.value as typeof input)}
+        <Section label="Hearing the room">
+          <Row
+            title="Speech to text"
+            help={`${speech?.name ?? 'Whisper Tiny'} · ${speech ? whereLabel(speech) : 'On this PC'}`}
           >
-            {mics.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </Row>
-        <Row title="Language" help="Auto follows the call. English keeps the speech model on English.">
-          <Choice
-            label="Speech language"
-            value={language}
-            options={[
-              ['auto', 'Auto'],
-              ['english', 'English'],
-            ]}
-            onChange={setLanguage}
-          />
-        </Row>
-      </Section>
-      <p className="privacy-line">{speech ? speechPrivacy(speech) : 'Speech stays on this PC.'}</p>
+            <button type="button" className="text-btn" onClick={() => onSection('speech')}>
+              Change
+            </button>
+          </Row>
+          <Row
+            title="Input"
+            help={
+              input === 'default'
+                ? 'Using the default input on this PC. annotated never joins the call.'
+                : `Using ${current?.name}. annotated never joins the call.`
+            }
+          >
+            <select
+              className="input-select"
+              aria-label="Input"
+              value={mics.some((item) => item.id === input) ? input : 'default'}
+              onChange={(event) => setInput(event.target.value as typeof input)}
+            >
+              {mics.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </Row>
+          <Row title="Language" help="Auto follows the call. English keeps the speech model on English.">
+            <Choice
+              label="Speech language"
+              value={language}
+              options={[
+                ['auto', 'Auto'],
+                ['english', 'English'],
+              ]}
+              onChange={setLanguage}
+            />
+          </Row>
+        </Section>
+        <p className="privacy-line">{speech ? speechPrivacy(speech) : 'Speech stays on this PC.'}</p>
       </div>
 
       <Section
         label="During the call"
         aside={showCues ? <span className="tag">{cuesOn} on</span> : <span className="tag">Off</span>}
       >
-        <Row title="Cues" help="Mid-call nudges when something needs fixing. Stays off your screen share.">
+        <Row
+          title="Live meeting indicator"
+          help="A floating panel over Zoom, Meet, or Teams while annotated is listening. Stays off your screen share."
+        >
+          <Switch
+            on={showMeetingIndicator}
+            label="Live meeting indicator"
+            onClick={() => setShowMeetingIndicator((value) => !value)}
+          />
+        </Row>
+        <Row
+          title="Overlay position"
+          help="Where the live meeting bar floats. You can still drag it during a call."
+        >
+          <div className={showMeetingIndicator ? undefined : 'opacity-slider dim'}>
+            <Choice
+              label="Overlay position"
+              value={overlayPosition}
+              options={overlayPositionOptions}
+              onChange={setOverlayPosition}
+            />
+          </div>
+        </Row>
+        <Row
+          title="Overlay opacity"
+          help={`${Math.round(overlayOpacity * 100)}% · Lower makes the panel more see-through over the call.`}
+        >
+          <label className={showMeetingIndicator ? 'opacity-slider' : 'opacity-slider dim'}>
+            <span className="sr">Overlay opacity</span>
+            <input
+              type="range"
+              min={35}
+              max={100}
+              step={1}
+              value={Math.round(overlayOpacity * 100)}
+              disabled={!showMeetingIndicator}
+              aria-valuetext={`${Math.round(overlayOpacity * 100)} percent`}
+              onChange={(event) => setOverlayOpacity(Number(event.target.value) / 100)}
+            />
+          </label>
+        </Row>
+        <Row title="Cues" help="Mid-call nudges on the indicator and Live screen when something needs fixing.">
           <Switch on={showCues} label="Show cues" onClick={() => setShowCues((value) => !value)} />
         </Row>
         <div className={showCues ? 'cue-layout' : 'cue-layout dim'}>
@@ -374,15 +432,9 @@ function Listening({
               </div>
             ))}
           </div>
-          <aside className={showCues ? 'cue-preview cue-preview-side' : 'cue-preview cue-preview-side dim'} aria-hidden={!showCues}>
-            <p className="overlay-kicker">Live cue</p>
-            <p className="overlay-kind">Missing date</p>
-            <p className="overlay-msg">Jon named the share test without a day. Ask for one before you leave.</p>
-            <p className="overlay-safe">{showCues ? 'Not on your screen share' : 'Cues are off'}</p>
-          </aside>
         </div>
         {unlocked ? null : (
-          <p className="pop-note">The overlay turns on with Unlock. Notes on this PC stay free.</p>
+          <p className="pop-note">Live cues need Unlock. The meeting indicator and notes on this PC stay free.</p>
         )}
       </Section>
     </div>
@@ -1048,75 +1100,71 @@ function LicensePage({ license }: { license: LicenseDesk }) {
   }
 
   return (
-    <div className="page-split">
-      <div>
-        <Section label="This copy">
-          <Row title="Plan" help={unlocked ? `Licensed to ${status?.email}.` : 'Local notes, transcription, and search stay free.'}>
-            <span className="pop-value">{plan}</span>
+    <div className="page-stack">
+      <Section label="This copy">
+        <Row title="Plan" help={unlocked ? `Licensed to ${status?.email}.` : 'Local notes, transcription, and search stay free.'}>
+          <span className="pop-value">{plan}</span>
+        </Row>
+        {status?.order ? (
+          <Row title="Order" help="The payment this license came from.">
+            <span className="pop-value">{status.order}</span>
           </Row>
-          {status?.order ? (
-            <Row title="Order" help="The payment this license came from.">
-              <span className="pop-value">{status.order}</span>
-            </Row>
-          ) : null}
-          <Row
-            title="Installer"
-            help={
-              status?.detail ??
-              (desktop ? 'Checking this copy…' : 'Open the desktop app to check this copy.')
-            }
-          >
-            <span className="pop-value">{installerLabel(status, desktop)}</span>
-          </Row>
-        </Section>
-        {status?.authenticity === 'tampered' ? <p className="pop-alert">{status.detail}</p> : null}
-        {status?.license === 'invalid' ? <p className="pop-alert">The saved license is not valid.</p> : null}
-      </div>
-      <div>
-        <Section label="Add a license">
-          {desktop ? (
-            <Row title="License" help="Paste the license from your account, or from the payment page." stack>
-              <textarea
-                className="license-field"
-                aria-label="License"
-                spellCheck={false}
-                autoComplete="off"
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
-                placeholder="annotated1…"
-              />
-              <div className="head-actions">
-                <button type="button" className="btn small primary" disabled={busy || !token.trim()} onClick={() => void activate()}>
-                  Activate
+        ) : null}
+        <Row
+          title="Installer"
+          help={
+            status?.detail ??
+            (desktop ? 'Checking this copy…' : 'Open the desktop app to check this copy.')
+          }
+        >
+          <span className="pop-value">{installerLabel(status, desktop)}</span>
+        </Row>
+      </Section>
+      {status?.authenticity === 'tampered' ? <p className="pop-alert">{status.detail}</p> : null}
+      {status?.license === 'invalid' ? <p className="pop-alert">The saved license is not valid.</p> : null}
+      <Section label="Add a license">
+        {desktop ? (
+          <Row title="License" help="Paste the license from your account, or from the payment page." stack>
+            <textarea
+              className="license-field"
+              aria-label="License"
+              spellCheck={false}
+              autoComplete="off"
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+              placeholder="annotated1…"
+            />
+            <div className="head-actions">
+              <button type="button" className="btn small primary" disabled={busy || !token.trim()} onClick={() => void activate()}>
+                Activate
+              </button>
+              {status?.license === 'valid' ? (
+                <button type="button" className="btn small ghost" disabled={busy} onClick={() => void remove()}>
+                  Remove
                 </button>
-                {status?.license === 'valid' ? (
-                  <button type="button" className="btn small ghost" disabled={busy} onClick={() => void remove()}>
-                    Remove
-                  </button>
-                ) : null}
-              </div>
-            </Row>
-          ) : (
-            <Row title="License" help="The desktop app stores the license on this PC and checks it offline.">
-              <span className="pop-value">Desktop app</span>
-            </Row>
-          )}
-          <Row title="Buy Unlock" help="One payment. You get the license and the signed installer.">
-            <button type="button" className="btn small primary" onClick={() => void buy()}>
-              Buy Unlock
-            </button>
+              ) : null}
+            </div>
           </Row>
-          <Row title="Your licenses" help="Sign in with the email you paid with. The key stays there after the payment page is closed.">
-            <button type="button" className="btn small" onClick={() => void openAccount()}>
-              Open account
-            </button>
+        ) : (
+          <Row title="License" help="The desktop app stores the license on this PC and checks it offline.">
+            <span className="pop-value">Desktop app</span>
           </Row>
-        </Section>
-        {error ? <p className="pop-alert">{error}</p> : null}
-        <p className="pop-note standalone">
-          A license that was altered does not unlock this PC. A copy of the app that was changed after signing stays on the free plan.
-        </p>
-      </div>
+        )}
+        <Row title="Buy Unlock" help="One payment. You get the license and the signed installer.">
+          <button type="button" className="btn small primary" onClick={() => void buy()}>
+            Buy Unlock
+          </button>
+        </Row>
+        <Row title="Your licenses" help="Sign in with the email you paid with. The key stays there after the payment page is closed.">
+          <button type="button" className="btn small" onClick={() => void openAccount()}>
+            Open account
+          </button>
+        </Row>
+      </Section>
+      {error ? <p className="pop-alert">{error}</p> : null}
+      <p className="pop-note standalone">
+        A license that was altered does not unlock this PC. A copy of the app that was changed after signing stays on the free plan.
+      </p>
     </div>
   )
 }
@@ -1137,8 +1185,7 @@ function Machine({
   const { launchAtLogin, setLaunchAtLogin, theme, setTheme } = settings
   const [armed, setArmed] = useState(false)
   return (
-    <div className="page-split">
-      <div>
+    <div className="page-stack">
       <Section label="You">
         <Row title="Your name" help="Shown in the sidebar, and written into the MCP prompt.">
           <input
@@ -1173,8 +1220,6 @@ function Machine({
           />
         </Row>
       </Section>
-      </div>
-      <div>
       <Section label="This copy">
         <Row title="Launch at login" help="Open annotated when Windows starts.">
           <Switch on={launchAtLogin} label="Launch at login" onClick={() => setLaunchAtLogin((value) => !value)} />
@@ -1206,10 +1251,6 @@ function Machine({
           )}
         </Row>
       </Section>
-      <p className="pop-note standalone">
-        Live cues stay off your screen share, and that protection is applied again after hide and show.
-      </p>
-      </div>
     </div>
   )
 }

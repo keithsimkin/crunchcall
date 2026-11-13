@@ -1,9 +1,10 @@
 import { useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import type { CalendarEvent } from '../features/calendar/ics'
 import { formatSynced, formatWhen } from '../features/calendar/format'
+import { calendarEmptyHint, calendarLinkHelp } from '../features/calendar/connectCopy'
 import { connectUrl, importCalendarText, setAskToStart, setCalendarError, setEnabled } from '../features/calendar/store'
 import { AccountConnect } from './AccountConnect'
-import { useCalendarClock } from './useCalendar'
+import { useCalendarClock, useCalendarSignIn } from './useCalendar'
 
 export function CalendarScreen({ onStart }: { onStart: (event: CalendarEvent) => void }) {
   const { calendar, upcoming, now } = useCalendarClock()
@@ -12,7 +13,7 @@ export function CalendarScreen({ onStart }: { onStart: (event: CalendarEvent) =>
   const [seenUrl, setSeenUrl] = useState(savedUrl)
   const [syncing, setSyncing] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-  const desktop = typeof window !== 'undefined' && !!window.crunchcall
+  const { desktop, signIn } = useCalendarSignIn()
   const next = upcoming[0]
 
   if (savedUrl !== seenUrl) {
@@ -57,7 +58,7 @@ export function CalendarScreen({ onStart }: { onStart: (event: CalendarEvent) =>
         {!calendar.error && !calendar.enabled ? <p className="empty">Sync is off.</p> : null}
         {!calendar.error && calendar.enabled && upcoming.length === 0 ? (
           <p className="empty">
-            {calendar.source ? 'Nothing coming up in the next two weeks.' : 'Connect Google or Outlook, or add a calendar link.'}
+            {calendar.source ? 'Nothing coming up in the next two weeks.' : calendarEmptyHint(desktop, signIn)}
           </p>
         ) : null}
         {upcoming.length > 0 ? (
@@ -92,12 +93,8 @@ export function CalendarScreen({ onStart }: { onStart: (event: CalendarEvent) =>
         <h2>Source</h2>
         <AccountConnect />
         <div className="cal-block">
-          <p className="set-label">{desktop ? 'Apple or another calendar' : 'Calendar link'}</p>
-          <p className="help">
-            {desktop
-              ? 'Private address from Apple, Fastmail, or another calendar. A webcal link is fine.'
-              : 'Private address from Google, Outlook, or Apple. If the browser blocks it, import an .ics file. Google and Outlook sign-in is in the desktop app.'}
-          </p>
+          <p className="set-label">{desktop ? 'Apple, Outlook, or another calendar' : 'Calendar link'}</p>
+          <p className="help">{calendarLinkHelp(desktop)}</p>
           <label className="field">
             <span className="sr">Calendar link</span>
             <input

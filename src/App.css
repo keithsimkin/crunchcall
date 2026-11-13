@@ -279,16 +279,69 @@
   max-width: none;
 }
 
+.shortcuts-page .page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .shortcuts-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr);
+  grid-template-columns: 1fr;
   gap: 14px;
   align-items: start;
 }
 
-.shortcuts-side {
-  display: grid;
-  gap: 14px;
+.shortcut-toast {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.shortcut-edit-list .shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 2px;
+  border-top: 1px solid var(--line);
+}
+
+.shortcut-edit-list li:first-child .shortcut-row {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.shortcut-run {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shortcut-run:disabled {
+  cursor: default;
+}
+
+.shortcut-keys {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.key-chord.recording kbd {
+  border-color: color-mix(in srgb, var(--ink) 35%, var(--line));
+  background: color-mix(in srgb, var(--ink) 8%, var(--surface-3));
 }
 
 .calendar-page .set-card,
@@ -2042,17 +2095,17 @@ code {
 .dictate-flow {
   position: fixed;
   left: 50%;
-  bottom: 28px;
+  top: 50%;
   z-index: 80;
-  transform: translateX(-50%);
-  width: min(420px, calc(100vw - 24px));
+  transform: translate(-50%, -50%);
+  width: min(280px, calc(100vw - 24px));
   pointer-events: none;
 }
 
 .dictate-bar-root .dictate-flow {
   position: static;
   left: auto;
-  bottom: auto;
+  top: auto;
   transform: none;
   width: 100%;
   padding: 8px;
@@ -2063,73 +2116,271 @@ code {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--overlay-line);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--overlay-bg) 92%, transparent);
-  color: var(--overlay-ink);
-  box-shadow: var(--shadow-pop);
-  backdrop-filter: blur(16px);
+  gap: 10px;
+  width: min(100%, 280px);
+  margin-inline: auto;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: #141414;
+  color: #fff;
+  box-shadow: 0 10px 28px color-mix(in srgb, #000 28%, transparent);
+  -webkit-app-region: drag;
 }
 
 .dictate-bar.listening {
-  border-color: color-mix(in srgb, var(--overlay-accent) 45%, var(--overlay-line));
+  background: #111;
 }
 
-.dictate-pulse {
-  width: 12px;
-  height: 12px;
+.dictate-pill-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
   flex: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
   border-radius: 999px;
-  background: var(--soft);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
-.dictate-bar.listening .dictate-pulse {
-  background: var(--overlay-accent);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--overlay-accent) 55%, transparent);
-  animation: dictate-pulse 1.4s ease-out infinite;
+.dictate-pill-btn.cancel {
+  background: color-mix(in srgb, #fff 18%, transparent);
+  color: #fff;
 }
 
-@keyframes dictate-pulse {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--overlay-accent) 45%, transparent);
-  }
-  70% {
-    box-shadow: 0 0 0 12px transparent;
-  }
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-  }
+.dictate-pill-btn.cancel:hover {
+  background: color-mix(in srgb, #fff 26%, transparent);
 }
 
-.dictate-bar-copy {
+.dictate-pill-btn.confirm {
+  background: #fff;
+  color: #111;
+}
+
+.dictate-pill-btn.confirm:hover {
+  background: #f3f3f3;
+}
+
+.dictate-pill-btn.confirm:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.dictate-wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   min-width: 0;
   flex: 1;
+  height: 34px;
+  -webkit-app-region: no-drag;
 }
 
-.dictate-bar-copy strong {
-  display: block;
+.dictate-wave-bar {
+  width: 3px;
+  min-height: 3px;
+  border-radius: 999px;
+  background: #fff;
+  transition: height 80ms linear;
+}
+
+.meeting-nub-root {
+  --nub-opacity: 0.94;
+  min-height: 100vh;
+  background: transparent;
+  overflow: hidden;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.meeting-nub {
+  width: min(100%, 444px);
+  padding: 10px 14px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--paper) calc(var(--nub-opacity) * 100%), transparent);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop);
+  backdrop-filter: blur(14px);
+  -webkit-app-region: drag;
+}
+
+.meeting-nub-root.expanded .meeting-nub {
+  border-radius: 22px;
+  padding: 12px 14px 12px;
+}
+
+.meeting-nub-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.meeting-nub-brand {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
+.meeting-nub-brand .live-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 8px;
+  height: 8px;
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--green-soft);
+}
+
+.meeting-nub-brand .live-dot.paused {
+  box-shadow: 0 0 0 2px var(--paper);
+}
+
+.meeting-nub-copy {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.meeting-nub-copy strong {
+  overflow: hidden;
   font-size: 14px;
   font-weight: 650;
   letter-spacing: -0.02em;
-}
-
-.dictate-bar-copy p {
-  margin: 2px 0 0;
-  overflow: hidden;
-  color: var(--overlay-muted);
-  font-size: 13px;
-  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.dictate-bar-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.meeting-nub-copy span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meeting-nub-chevron {
   flex: none;
+  color: var(--soft);
+  font-size: 12px;
+}
+
+.meeting-nub-body {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+  -webkit-app-region: no-drag;
+}
+
+.meeting-nub-cue .overlay-kind {
+  margin-top: 4px;
+  font-size: 15px;
+}
+
+.meeting-nub-cue .overlay-msg {
+  font-size: 13px;
+}
+
+.meeting-nub-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.meeting-nub-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.meeting-nub-lines li {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.meeting-nub-lines strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.meeting-nub-lines span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.meeting-nub .overlay-safe {
+  margin-top: 0;
+  width: fit-content;
+  justify-self: start;
+}
+
+.meeting-nub .overlay-safe.compact {
+  margin-top: 10px;
+}
+
+.meeting-nub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.meeting-nub-actions .btn.small {
+  min-height: 30px;
+  padding: 0 11px;
+  font-size: 12px;
+}
+
+.opacity-slider {
+  display: grid;
+  align-items: center;
+  min-width: 148px;
+}
+
+.opacity-slider.dim {
+  opacity: 0.45;
+}
+
+.opacity-slider input[type='range'] {
+  width: 148px;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+
+.opacity-slider input[type='range']:disabled {
+  cursor: not-allowed;
 }
 
 .dictate-history {
@@ -2804,14 +3055,13 @@ code {
 
 /* ---------- Settings: model pick cards ---------- */
 
-.page-split {
+.page-stack {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
-  gap: 8px 22px;
+  gap: 14px;
   align-items: start;
 }
 
-.page-split .cue-layout {
+.page-stack .cue-layout {
   grid-template-columns: 1fr;
   gap: 10px;
   padding: 2px 12px 12px;
@@ -3331,8 +3581,8 @@ details[open] > summary > .disclosure-chevron {
 
 .cue-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(200px, 240px);
-  gap: 14px;
+  grid-template-columns: 1fr;
+  gap: 10px;
   padding: 11px 14px 13px;
 }
 
@@ -3356,12 +3606,6 @@ details[open] > summary > .disclosure-chevron {
 .cue-row.dim {
   opacity: 0.55;
   border-top-color: transparent;
-}
-
-.cue-preview-side {
-  width: 100%;
-  margin: 0;
-  align-self: start;
 }
 
 .cue-box > summary {
@@ -3544,7 +3788,6 @@ details[open] > summary > .disclosure-chevron {
   }
 
   .cue-layout,
-  .page-split,
   .role-rail,
   .role-rail-pair {
     grid-template-columns: 1fr;
@@ -5345,6 +5588,24 @@ mark {
   font-size: 12.5px;
   line-height: 1.55;
   resize: none;
+}
+
+.ob-ask-card {
+  max-width: 520px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--wash);
+}
+
+.ob-ask-card .set-label,
+.ob-ask-card .help {
+  margin: 0;
+}
+
+.ob-ask-card .help {
+  margin-top: 4px;
 }
 
 .ob-checks {

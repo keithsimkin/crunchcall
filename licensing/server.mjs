@@ -13,10 +13,8 @@ const root = path.dirname(fileURLToPath(import.meta.url))
 const BUY_PATH = '/buy'
 const DONE_PATH = '/buy/done'
 const CHECKOUT_PATH = '/checkout'
-const WEBHOOK_PATH = '/stripe/webhook'
-const PADDLE_WEBHOOK_PATH = '/paddle/webhook'
+const DODO_WEBHOOK_PATH = '/dodo/webhook'
 const DOWNLOAD_PATH = '/download'
-const PADDLE_IPS_URL = 'https://api.paddle.com/ips'
 const SESSION_SECONDS = 30 * 24 * 60 * 60
 const RECEIPT_SECONDS = 14 * 24 * 60 * 60
 
@@ -43,54 +41,13 @@ ${body}
 </html>`
 }
 
-function jsLiteral(value) {
-  return JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026')
-}
-
-function paddleCheckout(paddle) {
-  const sandbox = paddle.sandbox ? 'Paddle.Environment.set("sandbox");' : ''
-  const customer = paddle.customerId ? `pwCustomer: { id: ${jsLiteral(paddle.customerId)} },` : ''
-  return `<script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
-<script>
-${sandbox}
-Paddle.Initialize({
-  token: ${jsLiteral(paddle.token)},
-  ${customer}
-  eventCallback: function (event) {
-    if (!event || event.name !== "checkout.completed" || !event.data) return
-    var id = event.data.transaction_id
-    if (typeof id === "string" && /^txn_[a-z0-9]+$/.test(id)) {
-      location.href = "/buy/done?transaction_id=" + encodeURIComponent(id)
-    }
-  }
-})
-function openAnnotatedCheckout() {
-  var existing = new URLSearchParams(location.search).get("_ptxn")
-  var successUrl = ${jsLiteral(paddle.successUrl)}
-  if (existing && /^txn_[a-z0-9]+$/.test(existing)) {
-    Paddle.Checkout.open({ transactionId: existing, settings: { successUrl: successUrl } })
-    return
-  }
-  Paddle.Checkout.open({
-    items: [{ priceId: ${jsLiteral(paddle.priceId)}, quantity: 1 }],
-    customData: { product: "annotated" },
-    settings: { successUrl: successUrl }
-  })
-}
-if (new URLSearchParams(location.search).get("_ptxn")) openAnnotatedCheckout()
-</script>
-<button type="button" onclick="openAnnotatedCheckout()" style="font:inherit;font-weight:600;padding:10px 16px;border-radius:999px;border:0;background:#1c1c19;color:#f5f5f3">Continue to payment</button>`
-}
-
-function buyPage({ ready, priceLabel, paddle }) {
+function buyPage({ ready, priceLabel }) {
   const price = priceLabel
     ? `<p>Unlock is ${escapeHtml(priceLabel)}, once. Local notes stay free.</p>`
     : '<p>Unlock is a one-time payment. Local notes stay free.</p>'
-  const action = paddle
-    ? paddleCheckout(paddle)
-    : ready
-      ? '<form method="post" action="/checkout"><button type="submit" style="font:inherit;font-weight:600;padding:10px 16px;border-radius:999px;border:0;background:#1c1c19;color:#f5f5f3">Continue to payment</button></form>'
-      : '<p>Payment is not set up on this server yet.</p>'
+  const action = ready
+    ? '<form method="post" action="/checkout"><button type="submit" style="font:inherit;font-weight:600;padding:10px 16px;border-radius:999px;border:0;background:#1c1c19;color:#f5f5f3">Continue to payment</button></form>'
+    : '<p>Payment is not set up on this server yet.</p>'
   return page(
     'Buy annotated Unlock',
     `${price}
@@ -140,39 +97,6 @@ function fulfillPurchase(purchase, privateKeyPem, orders, now) {
   return { ok: true, record }
 }
 
-function fulfillSession(session, privateKeyPem, orders, now) {
-  if (!session || session.object !== 'checkout.session') return { ok: false, reason: 'session' }
-  const product = session.metadata && session.metadata.product
-  if (product !== license.PRODUCT) return { ok: false, reason: 'product' }
-  if (session.payment_status !== 'paid') return { ok: false, reason: 'pending', pending: true }
-  const email = (session.customer_details && session.customer_details.email) || session.customer_email || ''
-  return fulfillPurchase({ id: session.id, email, product, customerId: '' }, privateKeyPem, orders, now)
-}
-
-function verifyStripeSignature(rawBody, header, secret, nowSeconds) {
-  if (typeof rawBody !== 'string' || typeof header !== 'string' || typeof secret !== 'string' || !secret) return false
-  const fields = new Map()
-  const signatures = []
-  for (const part of header.split(',')) {
-    const eq = part.indexOf('=')
-    if (eq < 0) continue
-    const key = part.slice(0, eq).trim()
-    const value = part.slice(eq + 1).trim()
-    if (key === 'v1') signatures.push(value)
-    else fields.set(key, value)
-  }
-  const timestamp = fields.get('t')
-  if (!timestamp || !/^\d+$/.test(timestamp) || signatures.length === 0) return false
-  const age = Math.abs(Math.floor(nowSeconds) - Number(timestamp))
-  if (age > 300) return false
-  const expected = crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex')
-  const expectedBuf = Buffer.from(expected)
-  return signatures.some((candidate) => {
-    const actual = Buffer.from(candidate)
-    return actual.length === expectedBuf.length && crypto.timingSafeEqual(actual, expectedBuf)
-  })
-}
-
 function downloadTarget(token, publicKeyPem, installerUrl, now) {
   const verified = license.verifyLicense(token, publicKeyPem, now)
   if (!verified.ok) return { status: 403, body: 'This download needs a valid unlock license.' }
@@ -184,55 +108,6 @@ function downloadTarget(token, publicKeyPem, installerUrl, now) {
   }
   if (url.protocol !== 'https:') return { status: 503, body: 'The signed installer is not published yet.' }
   return { status: 302, location: url.toString() }
-}
-
-function stripeEvent(rawBody, header, secret, nowSeconds) {
-  if (!verifyStripeSignature(rawBody, header, secret, nowSeconds)) return { ok: false, reason: 'signature' }
-  try {
-    const event = JSON.parse(rawBody)
-    if (!event || event.type !== 'checkout.session.completed' || !event.data || !event.data.object) {
-      return { ok: true, ignore: true }
-    }
-    return { ok: true, session: event.data.object }
-  } catch {
-    return { ok: false, reason: 'body' }
-  }
-}
-
-async function createCheckoutSession({ secretKey, priceId, successUrl, cancelUrl }) {
-  const body = new URLSearchParams({
-    mode: 'payment',
-    'line_items[0][price]': priceId,
-    'line_items[0][quantity]': '1',
-    success_url: successUrl,
-    cancel_url: cancelUrl,
-    'metadata[product]': license.PRODUCT,
-  })
-  const response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${secretKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body,
-  })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok || !payload || typeof payload.url !== 'string') {
-    const error = new Error('checkout')
-    error.status = response.status
-    throw error
-  }
-  return payload.url
-}
-
-async function fetchCheckoutSession(secretKey, sessionId) {
-  if (!/^cs_[A-Za-z0-9_]+$/.test(sessionId)) return null
-  const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
-    headers: { Authorization: `Bearer ${secretKey}` },
-  })
-  if (!response.ok) return null
-  const payload = await response.json().catch(() => null)
-  return payload
 }
 
 function readBody(req, limit = 1_000_000) {
@@ -410,104 +285,122 @@ function accountLinks(user, record) {
   return `<p>Create an account with ${escapeHtml(record.email)} and this key stays available when you come back. <a href="/account/signup?email=${encodeURIComponent(record.email)}">Create account</a> or <a href="/account/login">sign in</a>.</p>`
 }
 
-function validPriceId(id) {
-  return /^pri_[a-z0-9]+$/.test(id)
-}
-
-function validClientToken(token, sandbox) {
-  return sandbox ? /^test_[A-Za-z0-9]+$/.test(token) : /^live_[A-Za-z0-9]+$/.test(token)
-}
-
-function ipv4ToInt(ip) {
-  const parts = String(ip).split('.')
-  if (parts.length !== 4) return null
-  let value = 0
-  for (const part of parts) {
-    if (!/^\d{1,3}$/.test(part)) return null
-    const octet = Number(part)
-    if (octet > 255) return null
-    value = value * 256 + octet
-  }
-  return value
-}
-
-function ipInCidr(ip, cidr) {
-  const slash = String(cidr).indexOf('/')
-  if (slash < 0) return false
-  const bits = Number(String(cidr).slice(slash + 1))
-  const base = ipv4ToInt(String(cidr).slice(0, slash))
-  const addr = ipv4ToInt(ip)
-  if (base == null || addr == null || !Number.isInteger(bits) || bits < 0 || bits > 32) return false
-  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0
-  return (addr & mask) === (base & mask)
-}
-
-function ipAllowed(ip, cidrs) {
-  if (!Array.isArray(cidrs)) return false
-  return cidrs.some((cidr) => ipInCidr(ip, cidr))
-}
-
 function clientIp(req) {
   const raw = req.socket && typeof req.socket.remoteAddress === 'string' ? req.socket.remoteAddress : ''
   return raw.startsWith('::ffff:') ? raw.slice(7) : raw
 }
 
-function verifyPaddleSignature(rawBody, header, secret, nowSeconds) {
-  if (typeof rawBody !== 'string' || typeof header !== 'string' || typeof secret !== 'string' || !secret) return false
-  let timestamp = ''
-  const signatures = []
-  for (const part of header.split(';')) {
-    const eq = part.indexOf('=')
-    if (eq < 0) continue
-    const key = part.slice(0, eq).trim()
-    const value = part.slice(eq + 1).trim()
-    if (key === 'ts') timestamp = value
-    else if (key === 'h1') signatures.push(value)
+function validDodoProductId(id) {
+  return typeof id === 'string' && /^pdt_[A-Za-z0-9_]+$/.test(id)
+}
+
+function dodoApiBase(testMode) {
+  return testMode ? 'https://test.dodopayments.com' : 'https://live.dodopayments.com'
+}
+
+function dodoWebhookKey(secret) {
+  if (typeof secret !== 'string' || !secret) return null
+  const raw = secret.startsWith('whsec_') ? secret.slice(6) : secret
+  try {
+    const key = Buffer.from(raw, 'base64')
+    return key.length ? key : null
+  } catch {
+    return null
   }
-  if (!/^\d+$/.test(timestamp) || signatures.length === 0) return false
+}
+
+function verifyDodoSignature(rawBody, headers, secret, nowSeconds) {
+  if (typeof rawBody !== 'string' || !headers || typeof secret !== 'string' || !secret) return false
+  const id = typeof headers.id === 'string' ? headers.id : ''
+  const timestamp = typeof headers.timestamp === 'string' ? headers.timestamp : ''
+  const signatureHeader = typeof headers.signature === 'string' ? headers.signature : ''
+  if (!id || !/^\d+$/.test(timestamp) || !signatureHeader) return false
   const age = Math.abs(Math.floor(nowSeconds) - Number(timestamp))
-  if (age > 5) return false
-  const expectedHex = crypto.createHmac('sha256', secret).update(`${timestamp}:${rawBody}`).digest('hex')
-  const expected = Buffer.from(expectedHex)
-  return signatures.some((candidate) => {
-    if (candidate.length !== expectedHex.length || !/^[0-9a-f]+$/i.test(candidate)) return false
-    const actual = Buffer.from(candidate.toLowerCase())
-    return crypto.timingSafeEqual(actual, expected)
+  if (age > 300) return false
+  const key = dodoWebhookKey(secret)
+  if (!key) return false
+  const expected = crypto.createHmac('sha256', key).update(`${id}.${timestamp}.${rawBody}`).digest('base64')
+  const expectedBuf = Buffer.from(expected)
+  return signatureHeader.split(' ').some((part) => {
+    const comma = part.indexOf(',')
+    if (comma < 0) return false
+    if (part.slice(0, comma) !== 'v1') return false
+    const actual = Buffer.from(part.slice(comma + 1))
+    return actual.length === expectedBuf.length && crypto.timingSafeEqual(actual, expectedBuf)
   })
 }
 
-function paddleEvent(rawBody, header, secret, nowSeconds) {
-  if (!verifyPaddleSignature(rawBody, header, secret, nowSeconds)) return { ok: false, reason: 'signature' }
+function dodoEvent(rawBody, headers, secret, nowSeconds) {
+  if (!verifyDodoSignature(rawBody, headers, secret, nowSeconds)) return { ok: false, reason: 'signature' }
   try {
     const event = JSON.parse(rawBody)
-    if (!event || event.event_type !== 'transaction.completed' || !event.data) return { ok: true, ignore: true }
-    return { ok: true, transaction: event.data }
+    if (!event || event.type !== 'payment.succeeded' || !event.data) return { ok: true, ignore: true }
+    return { ok: true, payment: event.data }
   } catch {
     return { ok: false, reason: 'body' }
   }
 }
 
-function emailFromTransaction(transaction) {
-  const customer = transaction && transaction.customer
+function emailFromDodoPayment(payment) {
+  const customer = payment && payment.customer
   if (customer && typeof customer.email === 'string') return customer.email
   return ''
 }
 
-function fulfillPaddleTransaction(transaction, priceId, privateKeyPem, orders, now, email) {
-  if (!transaction || typeof transaction !== 'object') return { ok: false, reason: 'transaction' }
-  if (transaction.status !== 'completed' && transaction.status !== 'paid') return { ok: false, reason: 'pending', pending: true }
-  const custom = transaction.custom_data
-  if (custom && custom.product && custom.product !== license.PRODUCT) return { ok: false, reason: 'product' }
-  const items = Array.isArray(transaction.items) ? transaction.items : []
-  const priced = items.some((item) => item && item.price && item.price.id === priceId)
-  if (!priced) return { ok: false, reason: 'price' }
-  const customerId = typeof transaction.customer_id === 'string' ? transaction.customer_id : ''
+function fulfillDodoPayment(payment, productId, privateKeyPem, orders, now) {
+  if (!payment || typeof payment !== 'object') return { ok: false, reason: 'payment' }
+  const status = typeof payment.status === 'string' ? payment.status : 'succeeded'
+  if (status !== 'succeeded') return { ok: false, reason: 'pending', pending: true }
+  const metadata = payment.metadata && typeof payment.metadata === 'object' ? payment.metadata : null
+  if (metadata && metadata.product && metadata.product !== license.PRODUCT) return { ok: false, reason: 'product' }
+  const cart = Array.isArray(payment.product_cart) ? payment.product_cart : []
+  const priced = cart.some((item) => item && item.product_id === productId)
+  if (!priced) return { ok: false, reason: 'product' }
+  const paymentId = typeof payment.payment_id === 'string' ? payment.payment_id : ''
+  if (!paymentId) return { ok: false, reason: 'session' }
+  const email = emailFromDodoPayment(payment)
+  const customer = payment.customer
+  const customerId = customer && typeof customer.customer_id === 'string'
+    ? customer.customer_id
+    : typeof payment.customer_id === 'string' ? payment.customer_id : ''
   return fulfillPurchase({
-    id: transaction.id,
+    id: paymentId,
     email,
     product: license.PRODUCT,
     customerId,
   }, privateKeyPem, orders, now)
+}
+
+async function createDodoCheckout({ apiKey, apiBase, productId, returnUrl, cancelUrl, fetchImpl }) {
+  const response = await fetchImpl(`${apiBase}/checkouts`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      product_cart: [{ product_id: productId, quantity: 1 }],
+      return_url: returnUrl,
+      cancel_url: cancelUrl,
+      metadata: { product: license.PRODUCT },
+    }),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || !payload || typeof payload.checkout_url !== 'string') {
+    const error = new Error('checkout')
+    error.status = response.status
+    throw error
+  }
+  return payload.checkout_url
+}
+
+async function fetchDodoPayment(apiKey, apiBase, paymentId, fetchImpl) {
+  if (!/^pay_[A-Za-z0-9_]+$/.test(paymentId)) return null
+  const response = await fetchImpl(`${apiBase}/payments/${encodeURIComponent(paymentId)}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  })
+  if (!response.ok) return null
+  return response.json().catch(() => null)
 }
 
 async function defaultSendMail({ to, subject, text }) {
@@ -553,22 +446,17 @@ function createServer(options) {
   const publicKey = options.publicKey
   const privateKey = options.privateKey
   const installerUrl = options.installerUrl || ''
-  const stripeSecret = options.stripeSecret || ''
-  const stripePrice = options.stripePrice || ''
-  const webhookSecret = options.webhookSecret || ''
   const origin = options.origin || 'https://annotated.click'
   const priceLabel = options.priceLabel || ''
   const sessionSecret = options.sessionSecret || ''
-  const paddleApiKey = options.paddleApiKey || ''
-  const paddleClientToken = options.paddleClientToken || ''
-  const paddlePriceId = options.paddlePriceId || ''
-  const paddleWebhookSecret = options.paddleWebhookSecret || ''
-  const paddleSandbox = options.paddleEnv === 'sandbox'
+  const dodoApiKey = options.dodoApiKey || ''
+  const dodoProductId = options.dodoProductId || ''
+  const dodoWebhookSecret = options.dodoWebhookSecret || ''
+  const dodoTestMode = options.dodoEnv === 'test'
   const fetchImpl = options.fetchImpl || fetch
   const sendMail = options.sendMail || defaultSendMail
-  const apiBase = paddleSandbox ? 'https://sandbox-api.paddle.com' : 'https://api.paddle.com'
-  const paddleReady = validClientToken(paddleClientToken, paddleSandbox) && validPriceId(paddlePriceId)
-  const paddleApiReady = Boolean(paddleApiKey) && validPriceId(paddlePriceId)
+  const dodoBase = dodoApiBase(dodoTestMode)
+  const dodoReady = Boolean(dodoApiKey) && validDodoProductId(dodoProductId)
   const store = options.store || createSupabaseStore({
     url: options.supabaseUrl || process.env.SUPABASE_URL || '',
     anonKey: options.supabaseAnonKey || process.env.SUPABASE_ANON_KEY || '',
@@ -577,7 +465,6 @@ function createServer(options) {
     emailRedirectTo: `${origin}/account`,
   })
   const attempts = new Map()
-  let ipCache = { at: 0, cidrs: null }
 
   async function remember(result) {
     if (result && result.ok && result.record) await store.saveOrder(result.record)
@@ -598,35 +485,6 @@ function createServer(options) {
       userId: user.id,
       exp: now + SESSION_SECONDS,
     }, sessionSecret), { maxAge: SESSION_SECONDS, origin })
-  }
-
-  async function paddleJson(path, init) {
-    const response = await fetchImpl(`${apiBase}${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${paddleApiKey}`,
-        ...(init && init.headers),
-      },
-    })
-    const payload = await response.json().catch(() => null)
-    return { ok: response.ok, status: response.status, data: payload && payload.data }
-  }
-
-  async function paddleCidrs() {
-    if (ipCache.cidrs && Date.now() - ipCache.at < 60 * 60 * 1000) return ipCache.cidrs
-    try {
-      const response = await fetchImpl(PADDLE_IPS_URL)
-      const payload = await response.json()
-      const cidrs = payload && payload.data && Array.isArray(payload.data.ipv4_cidrs)
-        ? payload.data.ipv4_cidrs.filter((cidr) => typeof cidr === 'string')
-        : []
-      if (!response.ok || cidrs.length === 0) throw new Error('ips')
-      ipCache = { at: Date.now(), cidrs }
-      return cidrs
-    } catch (error) {
-      if (ipCache.cidrs) return ipCache.cidrs
-      throw error
-    }
   }
 
   async function currentUser(cookies, now) {
@@ -684,68 +542,46 @@ function createServer(options) {
         return
       }
       if (req.method === 'GET' && url.pathname === BUY_PATH) {
-        const owned = user ? await store.listOrders(user.email) : []
-        const customerId = (owned.find((record) => /^ctm_[a-z0-9]+$/.test(record.customerId || '')) || {}).customerId || ''
         send(res, 200, buyPage({
-          ready: Boolean(!paddleReady && (paddleApiReady || (stripeSecret && stripePrice))),
+          ready: dodoReady,
           priceLabel,
-          paddle: paddleReady
-            ? {
-              token: paddleClientToken,
-              priceId: paddlePriceId,
-              sandbox: paddleSandbox,
-              successUrl: `${origin}${DONE_PATH}`,
-              customerId,
-            }
-            : null,
         }))
         return
       }
       if (req.method === 'POST' && url.pathname === CHECKOUT_PATH) {
-        if (paddleApiReady) {
-          const created = await paddleJson('/transactions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              items: [{ price_id: paddlePriceId, quantity: 1 }],
-              collection_mode: 'automatic',
-              custom_data: { product: license.PRODUCT },
-            }),
-          })
-          const id = created.data && created.data.id
-          const hosted = created.data && created.data.checkout && created.data.checkout.url
-          if (!created.ok || typeof id !== 'string') {
-            send(res, 502, page('Payment is not set up', '<p>Payment could not start. Try again in a moment.</p>'))
-            return
-          }
-          const location = paddleReady ? `${origin}${BUY_PATH}?_ptxn=${encodeURIComponent(id)}` : hosted
-          if (typeof location !== 'string' || !location) {
-            send(res, 502, page('Payment is not set up', '<p>Payment could not start. Try again in a moment.</p>'))
-            return
-          }
-          redirect(res, location)
-          return
-        }
-        if (!stripeSecret || !stripePrice) {
+        if (!dodoReady) {
           send(res, 503, page('Payment is not set up', '<p>Payment is not set up on this server yet.</p>'))
           return
         }
-        const checkout = await createCheckoutSession({
-          secretKey: stripeSecret,
-          priceId: stripePrice,
-          successUrl: `${origin}${DONE_PATH}?session_id={CHECKOUT_SESSION_ID}`,
-          cancelUrl: `${origin}${BUY_PATH}`,
-        })
-        redirect(res, checkout)
+        try {
+          const checkout = await createDodoCheckout({
+            apiKey: dodoApiKey,
+            apiBase: dodoBase,
+            productId: dodoProductId,
+            returnUrl: `${origin}${DONE_PATH}`,
+            cancelUrl: `${origin}${BUY_PATH}`,
+            fetchImpl,
+          })
+          redirect(res, checkout)
+        } catch {
+          send(res, 502, page('Payment is not set up', '<p>Payment could not start. Try again in a moment.</p>'))
+        }
         return
       }
-      if (req.method === 'POST' && url.pathname === WEBHOOK_PATH) {
+      if (req.method === 'POST' && url.pathname === DODO_WEBHOOK_PATH) {
         const raw = await readBody(req)
-        const signatureHeader = req.headers['stripe-signature']
-        const event = stripeEvent(
+        const headerValue = (name) => {
+          const value = req.headers[name]
+          return Array.isArray(value) ? value[0] : value || ''
+        }
+        const event = dodoEvent(
           raw,
-          Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader || '',
-          webhookSecret,
+          {
+            id: headerValue('webhook-id'),
+            timestamp: headerValue('webhook-timestamp'),
+            signature: headerValue('webhook-signature'),
+          },
+          dodoWebhookSecret,
           now,
         )
         if (!event.ok) {
@@ -756,56 +592,12 @@ function createServer(options) {
           send(res, 503, 'retry', { 'Content-Type': 'text/plain; charset=utf-8' })
           return
         }
-        if (!event.ignore && event.session) {
-          const result = await remember(fulfillSession(event.session, privateKey, await orderBag(event.session && event.session.id), now))
-          if (!result.ok && result.reason === 'email') {
+        if (!event.ignore && event.payment) {
+          if (!emailFromDodoPayment(event.payment)) {
             send(res, 500, 'retry', { 'Content-Type': 'text/plain; charset=utf-8' })
             return
           }
-        }
-        send(res, 200, 'ok', { 'Content-Type': 'text/plain; charset=utf-8' })
-        return
-      }
-      if (req.method === 'POST' && url.pathname === PADDLE_WEBHOOK_PATH) {
-        const raw = await readBody(req)
-        let cidrs
-        try {
-          cidrs = await paddleCidrs()
-        } catch {
-          send(res, 503, 'retry', { 'Content-Type': 'text/plain; charset=utf-8' })
-          return
-        }
-        if (!ipAllowed(clientIp(req), cidrs)) {
-          send(res, 403, 'forbidden', { 'Content-Type': 'text/plain; charset=utf-8' })
-          return
-        }
-        const signatureHeader = req.headers['paddle-signature']
-        const event = paddleEvent(
-          raw,
-          Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader || '',
-          paddleWebhookSecret,
-          now,
-        )
-        if (!event.ok) {
-          send(res, 401, 'invalid', { 'Content-Type': 'text/plain; charset=utf-8' })
-          return
-        }
-        if (!event.ignore && event.transaction) {
-          let email = emailFromTransaction(event.transaction)
-          const customerId = event.transaction.customer_id
-          if (!email && paddleApiKey && /^ctm_[a-z0-9]+$/.test(customerId || '')) {
-            const customer = await paddleJson(`/customers/${customerId}`)
-            email = customer.data && customer.data.email
-          }
-          if (!email) {
-            send(res, 500, 'retry', { 'Content-Type': 'text/plain; charset=utf-8' })
-            return
-          }
-          if (!store.ready) {
-            send(res, 503, 'retry', { 'Content-Type': 'text/plain; charset=utf-8' })
-            return
-          }
-          const result = await remember(fulfillPaddleTransaction(event.transaction, paddlePriceId, privateKey, await orderBag(event.transaction.id), now, email))
+          const result = await remember(fulfillDodoPayment(event.payment, dodoProductId, privateKey, await orderBag(event.payment.payment_id), now))
           if (!result.ok && result.reason === 'email') {
             send(res, 500, 'retry', { 'Content-Type': 'text/plain; charset=utf-8' })
             return
@@ -815,34 +607,15 @@ function createServer(options) {
         return
       }
       if (req.method === 'GET' && url.pathname === DONE_PATH) {
-        const transactionId = url.searchParams.get('transaction_id') || url.searchParams.get('_ptxn') || ''
-        const sessionId = url.searchParams.get('session_id') || ''
+        const paymentId = url.searchParams.get('payment_id') || ''
         let record = null
-        if (/^txn_[a-z0-9]+$/.test(transactionId)) {
-          record = store.ready ? await store.getOrder(transactionId) : null
-          if (!record && paddleApiKey && store.ready) {
-            const transaction = await paddleJson(`/transactions/${transactionId}`)
-            let email = emailFromTransaction(transaction.data)
-            const customerId = transaction.data && transaction.data.customer_id
-            if (!email && /^ctm_[a-z0-9]+$/.test(customerId || '')) {
-              const customer = await paddleJson(`/customers/${customerId}`)
-              email = customer.data && customer.data.email
-            }
-            const result = transaction.data
-              ? await remember(fulfillPaddleTransaction(transaction.data, paddlePriceId, privateKey, await orderBag(transaction.data.id), now, email))
+        if (/^pay_[A-Za-z0-9_]+$/.test(paymentId)) {
+          record = store.ready ? await store.getOrder(paymentId) : null
+          if (!record && dodoReady && store.ready) {
+            const payment = await fetchDodoPayment(dodoApiKey, dodoBase, paymentId, fetchImpl)
+            const result = payment
+              ? await remember(fulfillDodoPayment(payment, dodoProductId, privateKey, await orderBag(payment.payment_id || paymentId), now))
               : { ok: false }
-            if (result.ok) {
-              record = result.record
-            } else if (result.pending) {
-              send(res, 200, donePage(null, true))
-              return
-            }
-          }
-        } else {
-          record = sessionId && store.ready ? await store.getOrder(sessionId) : null
-          if (!record && stripeSecret && sessionId && store.ready) {
-            const session = await fetchCheckoutSession(stripeSecret, sessionId)
-            const result = await remember(fulfillSession(session, privateKey, await orderBag(session && session.id), now))
             if (result.ok) {
               record = result.record
             } else if (result.pending) {
@@ -1039,14 +812,10 @@ function start() {
     publicKey: license.bundledPublicKey(),
     privateKey: fs.readFileSync(privatePath, 'utf8'),
     installerUrl: process.env.ANNOTATED_INSTALLER_URL || '',
-    stripeSecret: process.env.STRIPE_SECRET_KEY || '',
-    stripePrice: process.env.STRIPE_PRICE_ID || '',
-    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
-    paddleApiKey: process.env.PADDLE_API_KEY || '',
-    paddleClientToken: process.env.PADDLE_CLIENT_TOKEN || '',
-    paddlePriceId: process.env.PADDLE_PRICE_ID || '',
-    paddleWebhookSecret: process.env.PADDLE_WEBHOOK_SECRET || '',
-    paddleEnv: process.env.PADDLE_ENV || 'live',
+    dodoApiKey: process.env.DODO_PAYMENTS_API_KEY || '',
+    dodoProductId: process.env.DODO_PAYMENTS_PRODUCT_ID || '',
+    dodoWebhookSecret: process.env.DODO_PAYMENTS_WEBHOOK_KEY || '',
+    dodoEnv: process.env.DODO_PAYMENTS_ENV || 'live',
     sessionSecret: process.env.ANNOTATED_SESSION_SECRET || '',
     supabaseUrl: process.env.SUPABASE_URL || '',
     supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
@@ -1069,9 +838,6 @@ export {
   createServer,
   donePage,
   downloadTarget,
-  fulfillSession,
-  ipAllowed,
-  stripeEvent,
-  verifyPaddleSignature,
-  verifyStripeSignature,
+  fulfillDodoPayment,
+  verifyDodoSignature,
 }

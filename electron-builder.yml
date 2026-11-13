@@ -6,6 +6,9 @@ files:
   - dist/**/*
   - electron/**/*
   - package.json
+  # scripts/write-oauth-config.mjs writes this before packing. It is gitignored
+  # because it may hold a client secret, so name it here as well as via electron/**/*.
+  - electron/oauth.json
   - "!electron/oauth.local.json"
   - "!electron/**/*.test.mjs"
 asar: true
@@ -14,6 +17,8 @@ publish:
   owner: keithsimkin
   repo: crunchcall
 win:
+  # Multi-size ICO (16–256). Embedded into annotated.exe so the taskbar,
+  # installer, and shortcuts never fall back to the Electron atom.
   icon: electron/icon.ico
   # CSC_LINK and CSC_KEY_PASSWORD sign the installer. electron-updater then
   # rejects an update whose Authenticode publisher does not match this build.
@@ -23,3 +28,5 @@ nsis:
   oneClick: true
   perMachine: false
   allowToChangeInstallationDirectory: false
+  shortcutName: annotated
+  uninstallDisplayName: annotated

@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CalendarEvent } from './features/calendar/ics'
+import { meetingsCalendarEmpty } from './features/calendar/connectCopy'
 import { dismiss, onCalendarStart, resetCalendar, setActiveMeeting } from './features/calendar/store'
 import { clearDeskStorage } from './lib/storage'
 import { setIndexedNotes } from './features/desk/notesIndex'
+import { disableDemoSeed, demoForced } from './features/desk/demoSeed'
 import { deleteMeeting, loadDesk, saveFolders } from './features/desk/store'
 import type { MeetingRow, ProjectAccent, ProjectFolder } from './ui/fixtures'
 import { CalendarIcon, DownloadIcon, FolderIcon, GearIcon, HomeIcon, LiveIcon, LogoMark, MicIcon, PlugIcon, ShortcutIcon } from './ui/icons'
@@ -14,6 +16,7 @@ import { emptyProfile, profileInitials, readProfile, writeProfile, type Profile 
 import { SettingsDialog } from './ui/SettingsScreen'
 import { ShortcutsScreen } from './ui/ShortcutsScreen'
 import { useSettingsState, type SettingsSection } from './ui/settingsState'
+import { eventMatchesChord } from './ui/shortcuts'
 import { useLicense } from './ui/useLicense'
 import { useUpdates } from './ui/useUpdates'
 import type { AskFocus } from './features/ask/context'
@@ -24,7 +27,7 @@ import { LandingPage } from './ui/LandingPage'
 import { LiveScreen } from './ui/LiveScreen'
 import { MeetingsScreen, StartAsk } from './ui/MeetingsScreen'
 import { NotesScreen } from './ui/NotesScreen'
-import { useCalendarClock } from './ui/useCalendar'
+import { useCalendarClock, useCalendarSignIn } from './ui/useCalendar'
 import './App.css'
 
 type View =
@@ -70,6 +73,7 @@ export default function App() {
   const license = useLicense()
   const update = useUpdates()
   const { calendar, upcoming, due, now } = useCalendarClock()
+  const { desktop: calendarDesktop, signIn: calendarSignIn } = useCalendarSignIn()
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null)
   const [gearSpin, setGearSpin] = useState(false)
   const [profile, setProfile] = useState(readProfile)
@@ -168,11 +172,54 @@ export default function App() {
     setFolders(desk.folders)
     setIndexedNotes(desk.notes)
     setDeskReady(true)
+    if (demoForced() || desk.rows.length > 0) {
+      const next = readProfile()
+      setProfile(next)
+      if (next.onboarded) setSetupOpen(false)
+    }
   }
 
   useEffect(() => {
     void refreshDesk()
   }, [])
+
+  const deepLinkDone = useRef(false)
+  useEffect(() => {
+    if (deepLinkDone.current || !deskReady || rows.length === 0) return
+    let params: URLSearchParams
+    try {
+      const search = new URLSearchParams(window.location.search)
+      const hash = window.location.hash
+      const hashQuery = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : ''
+      params = new URLSearchParams(search.toString() || hashQuery)
+    } catch {
+      return
+    }
+    const screen = params.get('view')
+    const meetingId = params.get('meeting') || params.get('id')
+    if (!screen) {
+      deepLinkDone.current = true
+      return
+    }
+    deepLinkDone.current = true
+    // Consume the deep link once so later desk refreshes do not yank the view back.
+    const url = new URL(window.location.href)
+    url.searchParams.delete('view')
+    url.searchParams.delete('meeting')
+    url.searchParams.delete('id')
+    history.replaceState({ surface: 'app' }, '', `${url.pathname}${url.search}#app`)
+    setMarketing(false)
+    setSetupOpen(false)
+    if (screen === 'live') {
+      const live = rows.find((item) => item.id === (meetingId || 'live-product')) ?? rows.find((item) => item.status === 'live')
+      if (live) setView({ name: 'live', fresh: false, title: live.title, meetingId: live.id })
+      else setView({ name: 'live', fresh: true })
+      return
+    }
+    if (screen === 'notes' && meetingId) {
+      setView({ name: 'notes', id: meetingId })
+    }
+  }, [deskReady, rows])
 
   useEffect(() => {
     setIndexedNotes(notesById)
@@ -187,9 +234,17 @@ export default function App() {
     settings.reset()
     resetCalendar()
     clearDeskStorage()
+    disableDemoSeed()
     const desk = await loadDesk()
     for (const row of desk.rows) await deleteMeeting(row.id)
     await saveFolders([])
+    try {
+      localStorage.removeItem('crunchcall.desk.v1')
+      localStorage.removeItem('crunchcall.folders')
+      localStorage.removeItem('crunchcall.dictations')
+    } catch {
+      /* storage still cleared for this session */
+    }
     const blank = emptyProfile()
     writeProfile(blank)
     setProfile(blank)
@@ -273,70 +328,47 @@ export default function App() {
       setView(next)
     }
 
+    const actions: Record<string, () => void> = {
+      'nav.home': () => go({ name: 'list' }),
+      'nav.live': () => {
+        setSettingsOpen(null)
+        const live = rows.find((item) => item.status === 'live')
+        setView({ name: 'live', fresh: !live, title: live?.title, meetingId: live?.id })
+      },
+      'nav.dictate': () => go({ name: 'dictate' }),
+      'nav.search': () => {
+        setSearchNonce((current) => current + 1)
+        go({ name: 'projects' })
+      },
+      'nav.calendar': () => go({ name: 'calendar' }),
+      'nav.projects': () => go({ name: 'projects' }),
+      'nav.shortcuts': () => go({ name: 'shortcuts' }),
+      'nav.connect': () => go({ name: 'connect' }),
+      'meeting.new': () => go({ name: 'live', fresh: true }),
+      'settings.listening': () => setSettingsOpen('listening'),
+      'settings.speech': () => setSettingsOpen('speech'),
+      'settings.notes': () => setSettingsOpen('notes'),
+      'settings.machine': () => setSettingsOpen('machine'),
+    }
+
     function onKey(event: KeyboardEvent) {
       if (setupOpen || marketing) return
-      if (event.defaultPrevented || event.altKey || event.metaKey) return
-      const key = event.key.toLowerCase()
-
-      if (event.ctrlKey && event.shiftKey) {
-        if (typing(event.target)) return
-        if (key === 'm') {
-          event.preventDefault()
-          setSettingsOpen('speech')
-          return
-        }
-        if (key === 'k') {
-          event.preventDefault()
-          setSettingsOpen('notes')
-          return
-        }
-        if (key === 'p') {
-          event.preventDefault()
-          setSettingsOpen('machine')
-          return
-        }
-      }
-
-      if (!event.ctrlKey) return
+      if (event.defaultPrevented) return
       if (typing(event.target)) return
 
-      if (key === 'n') {
+      for (const [id, run] of Object.entries(actions)) {
+        const chord = settings.shortcuts[id as keyof typeof settings.shortcuts]
+        if (!chord || id === 'dictate.global') continue
+        if (!eventMatchesChord(event, chord)) continue
         event.preventDefault()
-        go({ name: 'live', fresh: true })
+        run()
         return
       }
-      if (key === ',') {
-        event.preventDefault()
-        setSettingsOpen('listening')
-        return
-      }
-
-      const digitViews: Record<string, () => void> = {
-        '1': () => go({ name: 'list' }),
-        '2': () => {
-          setSettingsOpen(null)
-          const live = rows.find((item) => item.status === 'live')
-          setView({ name: 'live', fresh: !live, title: live?.title, meetingId: live?.id })
-        },
-        '3': () => go({ name: 'dictate' }),
-        '4': () => {
-          setSearchNonce((current) => current + 1)
-          go({ name: 'projects' })
-        },
-        '5': () => go({ name: 'calendar' }),
-        '6': () => go({ name: 'projects' }),
-        '7': () => go({ name: 'shortcuts' }),
-        '8': () => go({ name: 'connect' }),
-      }
-      const jump = digitViews[key]
-      if (!jump) return
-      event.preventDefault()
-      jump()
     }
 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [rows, setupOpen, marketing])
+  }, [rows, setupOpen, marketing, settings.shortcuts])
 
   async function removeMeeting(id: string) {
     await deleteMeeting(id)
@@ -539,7 +571,7 @@ export default function App() {
             calendarOn={calendar.enabled}
             calendarError={calendar.error}
             calendarEmpty={
-              calendar.source ? 'Nothing coming up in the next two weeks.' : 'Connect Google or Outlook under Calendar, or add a private link.'
+              calendar.source ? 'Nothing coming up in the next two weeks.' : meetingsCalendarEmpty(calendarDesktop, calendarSignIn)
             }
             upcoming={upcoming}
             due={due}
@@ -560,6 +592,9 @@ export default function App() {
             inputDevice={settings.input}
             language={settings.language}
             showCues={settings.showCues}
+            showMeetingIndicator={settings.showMeetingIndicator}
+            overlayOpacity={settings.overlayOpacity}
+            overlayPosition={settings.overlayPosition}
             cues={settings.cues}
             unlocked={license.unlocked}
             onUnlock={() => setSettingsOpen('license')}
@@ -573,7 +608,13 @@ export default function App() {
             }}
           />
         ) : null}
-        {view.name === 'dictate' ? <DictateScreen speechId={settings.speechId} /> : null}
+        {view.name === 'dictate' ? (
+          <DictateScreen
+            speechId={settings.speechId}
+            chord={settings.shortcuts['dictate.global']}
+            mode={settings.dictateMode}
+          />
+        ) : null}
         {view.name === 'notes' && notesMeeting ? (
           <NotesScreen
             key={notesMeeting.id}
@@ -595,6 +636,7 @@ export default function App() {
         {view.name === 'calendar' ? <CalendarScreen onStart={(event) => beginFromCalendar(event, false)} /> : null}
         {view.name === 'shortcuts' ? (
           <ShortcutsScreen
+            settings={settings}
             onHome={() => setView({ name: 'list' })}
             onNew={() => setView({ name: 'live', fresh: true })}
             onLive={openLive}
@@ -654,7 +696,13 @@ export default function App() {
           onClose={() => setSetupOpen(false)}
         />
       ) : null}
-      <DictatePopup speechId={settings.speechId} open={dictateOpen} onOpenChange={setDictateOpen} />
+      <DictatePopup
+        speechId={settings.speechId}
+        open={dictateOpen}
+        onOpenChange={setDictateOpen}
+        chord={settings.shortcuts['dictate.global']}
+        mode={settings.dictateMode}
+      />
       {!setupOpen ? (
         <FloatingAsk
           focus={askFocusFor(view)}

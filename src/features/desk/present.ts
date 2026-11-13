@@ -1,5 +1,5 @@
 import type { MeetingStatus } from '../meetings/types'
-import type { MeetingRow, NoteAction, NoteUtterance, ProjectAccent, ProjectFolder, RichNotes } from '../../ui/fixtures'
+import { richNotes, type MeetingRow, type NoteAction, type NoteUtterance, type ProjectAccent, type ProjectFolder, type RichNotes } from '../../ui/fixtures'
 
 export type EngineMeeting = {
   id: string
@@ -95,15 +95,22 @@ export function toAction(row: EngineAction): NoteAction {
   }
 }
 
-export function toNotes(notes: EngineNotes | null, utterances: EngineUtterance[], actions: EngineAction[]): RichNotes | null {
+export function toNotes(
+  notes: EngineNotes | null,
+  utterances: EngineUtterance[],
+  actions: EngineAction[],
+  meetingId?: string,
+): RichNotes | null {
   if (!notes && utterances.length === 0 && actions.length === 0) return null
+  const fixture = meetingId ? richNotes[meetingId] : undefined
   return {
     summary: notes?.summary ?? '',
     takeaways: notes?.takeaways ?? [],
     actions: actions.map(toAction),
     utterances: utterances.map(toUtterance),
-    ask: [],
-    sampleReply: { id: 'unused', role: 'assistant', text: '' },
+    // Demo fixtures keep the Ask thread + cite chips; the engine desk has no ask store yet.
+    ask: fixture?.ask ?? [],
+    sampleReply: fixture?.sampleReply ?? { id: 'unused', role: 'assistant', text: '' },
     markdown: notes?.markdown ?? '',
   }
 }

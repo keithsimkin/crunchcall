@@ -24,6 +24,20 @@ bun run dev
 
 Build: `bun run build`
 
+Windows installer: `bun run desktop:pack` (writes `electron/oauth.json`, then `electron-builder --win`).
+
+## Google Calendar
+
+Connect Google is desktop-only. The public client id is `333278308187-f51jcakj57d2q3c2bi1v4u3bt2ku03lo.apps.googleusercontent.com`. Google’s desktop clients also require a client secret on the token exchange and on refresh, even with PKCE. Do not commit the secret.
+
+Set `CRUNCHCALL_GOOGLE_CLIENT_SECRET` in `.env` or `googleClientSecret` in `electron/oauth.local.json` (copy `electron/oauth.example.json`). Optional overrides: `CRUNCHCALL_GOOGLE_CLIENT_ID`, `CRUNCHCALL_MICROSOFT_CLIENT_ID`.
+
+Runtime order, per field: environment variable, then `electron/oauth.local.json`, then the packaged `electron/oauth.json`, then the built-in public Google client id. Connect Google stays hidden until both the id and the secret are present. Connect Outlook stays hidden while `microsoftClientId` is empty. A private ICS link or an imported `.ics` file needs no OAuth.
+
+While the Google app is in Testing, only listed test users can sign in. `calendar.readonly` is a sensitive scope and needs Google verification before a public launch. Outlook sign-in is parked. See [`docs/CALENDAR.md`](docs/CALENDAR.md).
+
+There is no GitHub Actions release workflow in this repo. When you add one, pass `CRUNCHCALL_GOOGLE_CLIENT_ID`, `CRUNCHCALL_GOOGLE_CLIENT_SECRET`, and `CRUNCHCALL_MICROSOFT_CLIENT_ID` from repository secrets into the pack step. The secret has no default.
+
 ## Demo surfaces
 
 The scaffold ships clickable versions of the three things that make a note worth keeping:

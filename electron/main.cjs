@@ -16,10 +16,10 @@ const trayIconPath = path.join(__dirname, process.platform === 'win32' ? 'icon-1
 const appIcon = nativeImage.createFromPath(iconPath)
 const trayIcon = nativeImage.createFromPath(trayIconPath)
 
-// Windows paints the taskbar from a shortcut that carries this id. The tray is
-// given icon-16.png directly, but `electron .` is electron.exe, so the taskbar
-// stays the Electron mark until a shortcut points at icon.ico.
-const APP_USER_MODEL_ID = 'click.annotated.app'
+// Must match electron-builder.yml `appId`. Windows paints the taskbar from a
+// Start Menu shortcut that carries this id — `electron .` is still electron.exe,
+// so without that shortcut the taskbar keeps the Electron atom.
+const APP_USER_MODEL_ID = 'click.annotated.desktop'
 
 // The window chrome is drawn by the app itself: no OS title bar, just the
 // native caption buttons floating on the same canvas colour as the sidebar.
@@ -37,8 +37,19 @@ let quitting = false
 let toldTray = false
 let dictateArmed = false
 let overlayWin = null
+let overlaySession = null
+let overlayExpanded = false
+let overlayAnchor = 'center'
 let loopbackArmed = false
+let dictateMode = 'toggle'
+let dictateAccelerator = process.platform === 'darwin' ? 'Control+Meta' : 'Control+Super'
 let authenticity = license.describeAuthenticity({ packaged: app.isPackaged, signature: null })
+
+const OVERLAY_WIDTH = 460
+const OVERLAY_COLLAPSED_HEIGHT = 72
+const OVERLAY_EXPANDED_HEIGHT = 380
+const DICTATE_WIDTH = 280
+const DICTATE_HEIGHT = 64
 
 app.setAppUserModelId(APP_USER_MODEL_ID)
 
@@ -52,26 +63,38 @@ function windowsLaunch() {
   return { cwd, args, command: `"${process.execPath}" ${args}` }
 }
 
+function removeStaleWindowsShortcuts(programs) {
+  for (const name of ['Electron.lnk', 'CrunchCall.lnk']) {
+    try {
+      require('fs').unlinkSync(path.join(programs, name))
+    } catch {
+      // Already gone — Electron used to drop Electron.lnk when no AUMID was set.
+    }
+  }
+}
+
 function ensureWindowsTaskbarIcon() {
-  if (process.platform !== 'win32' || app.isPackaged) return
-  const { cwd, args } = windowsLaunch()
+  if (process.platform !== 'win32') return
   const programs = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+  removeStaleWindowsShortcuts(programs)
+  // Packaged installs already ship annotated.exe with the embedded icon.
+  if (app.isPackaged) return
+  const { cwd, args } = windowsLaunch()
   const shortcutPath = path.join(programs, 'annotated.lnk')
-  try {
-    require('fs').unlinkSync(path.join(programs, 'CrunchCall.lnk'))
-  } catch {
-    // The previous shortcut is already gone.
+  const details = {
+    target: process.execPath,
+    args,
+    cwd,
+    icon: iconPath,
+    iconIndex: 0,
+    appUserModelId: APP_USER_MODEL_ID,
+    description: 'annotated',
   }
   try {
-    shell.writeShortcutLink(shortcutPath, 'create', {
-      target: process.execPath,
-      args,
-      cwd,
-      icon: iconPath,
-      iconIndex: 0,
-      appUserModelId: APP_USER_MODEL_ID,
-      description: 'annotated',
-    })
+    // `create` no-ops when the .lnk already exists, so always replace.
+    if (!shell.writeShortcutLink(shortcutPath, 'replace', details)) {
+      shell.writeShortcutLink(shortcutPath, 'create', details)
+    }
   } catch {
     // A missing shortcut only affects the taskbar glyph. Still open the app.
   }
@@ -86,6 +109,14 @@ function applyWindowsTaskbarIcon(window) {
     appIconIndex: 0,
     relaunchCommand: command,
     relaunchDisplayName: 'annotated',
+  })
+}
+
+function notify(options) {
+  if (!Notification.isSupported()) return null
+  return new Notification({
+    ...options,
+    icon: appIcon.isEmpty() ? undefined : appIcon,
   })
 }
 
@@ -210,22 +241,40 @@ function announce(payload) {
     }, 5000)
   }
   if (payload && payload.focus) showMain()
-  if (!Notification.isSupported()) return
-  const note = new Notification({ title, body: body || title })
+  const note = notify({ title, body: body || title })
+  if (!note) return
   if (url) note.on('click', () => shell.openExternal(url))
   note.show()
+}
+
+function anchorPoint(display, width, height, position) {
+  const pad = 24
+  const kind = position === 'top-right' || position === 'top-left' || position === 'bottom-center' ? position : 'center'
+  if (kind === 'top-left') return { x: display.x + pad, y: display.y + pad }
+  if (kind === 'top-right') return { x: display.x + display.width - width - pad, y: display.y + pad }
+  if (kind === 'bottom-center') {
+    return {
+      x: display.x + Math.round((display.width - width) / 2),
+      y: display.y + display.height - height - pad,
+    }
+  }
+  return {
+    x: display.x + Math.round((display.width - width) / 2),
+    y: display.y + Math.round((display.height - height) / 2),
+  }
 }
 
 function ensureDictateBar() {
   if (dictateWin && !dictateWin.isDestroyed()) return dictateWin
   const display = screen.getPrimaryDisplay().workArea
-  const width = 420
-  const height = 88
+  const width = DICTATE_WIDTH
+  const height = DICTATE_HEIGHT
+  const spot = anchorPoint(display, width, height, 'center')
   dictateWin = new BrowserWindow({
     width,
     height,
-    x: Math.round(display.x + (display.width - width) / 2),
-    y: Math.round(display.y + display.height - height - 28),
+    x: spot.x,
+    y: spot.y,
     frame: false,
     transparent: true,
     resizable: false,
@@ -259,6 +308,9 @@ function ensureDictateBar() {
 
 function showDictateBar() {
   const bar = ensureDictateBar()
+  const display = screen.getPrimaryDisplay().workArea
+  const spot = anchorPoint(display, DICTATE_WIDTH, DICTATE_HEIGHT, 'center')
+  bar.setBounds({ x: spot.x, y: spot.y, width: DICTATE_WIDTH, height: DICTATE_HEIGHT }, false)
   if (bar.isMinimized()) bar.restore()
   bar.showInactive()
   bar.moveTop()
@@ -276,13 +328,83 @@ function toggleDictateHotkey() {
   if (!dictateArmed) {
     dictateArmed = true
     showDictateBar()
+    try {
+      bar.focus()
+    } catch {
+      /* focus optional for hold release */
+    }
     rebuildTrayMenu()
     bar.webContents.send('dictate:hotkey', 'start')
     return
   }
+  if (dictateMode === 'hold') {
+    // Hold mode finishes from the bar on keyup; a second press still stops.
+  }
   dictateArmed = false
   bar.webContents.send('dictate:hotkey', 'stop')
   rebuildTrayMenu()
+}
+
+function acceleratorFromChord(chord) {
+  if (!chord || typeof chord !== 'object') return null
+  const parts = []
+  if (chord.ctrl) parts.push('Control')
+  if (chord.alt) parts.push('Alt')
+  if (chord.shift) parts.push('Shift')
+  if (chord.meta) parts.push(process.platform === 'darwin' ? 'Meta' : 'Super')
+  const key = typeof chord.key === 'string' ? chord.key.trim().toLowerCase() : ''
+  if (key) {
+    const map = {
+      ',': ',',
+      '.': '.',
+      '/': '/',
+      ';': ';',
+      "'": "'",
+      '[': '[',
+      ']': ']',
+      '\\': '\\',
+      '`': '`',
+      '-': '-',
+      '=': '=',
+      space: 'Space',
+      esc: 'Escape',
+      enter: 'Enter',
+      tab: 'Tab',
+      backspace: 'Backspace',
+      delete: 'Delete',
+      up: 'Up',
+      down: 'Down',
+      left: 'Left',
+      right: 'Right',
+    }
+    parts.push(map[key] || (key.length === 1 ? key.toUpperCase() : key))
+  }
+  return parts.length ? parts.join('+') : null
+}
+
+function registerDictateShortcut(chord, mode) {
+  if (mode === 'hold' || mode === 'toggle') dictateMode = mode
+  const next = acceleratorFromChord(chord) || (process.platform === 'darwin' ? 'Control+Meta' : 'Control+Super')
+  try {
+    globalShortcut.unregisterAll()
+  } catch {
+    /* ignore */
+  }
+  const tryRegister = (accelerator) => {
+    try {
+      return globalShortcut.register(accelerator, () => toggleDictateHotkey())
+    } catch {
+      return false
+    }
+  }
+  let ok = tryRegister(next)
+  let used = next
+  if (!ok) {
+    used = 'CommandOrControl+Alt+Space'
+    ok = tryRegister(used)
+  }
+  dictateAccelerator = ok ? used : ''
+  return { ok, accelerator: dictateAccelerator, mode: dictateMode }
 }
 
 function pasteText(text) {
@@ -316,22 +438,72 @@ function pasteText(text) {
   })
 }
 
+function overlayHeight() {
+  return overlayExpanded ? OVERLAY_EXPANDED_HEIGHT : OVERLAY_COLLAPSED_HEIGHT
+}
+
+function placeOverlay(target, forceAnchor = false) {
+  const display = screen.getPrimaryDisplay().workArea
+  const width = OVERLAY_WIDTH
+  const height = overlayHeight()
+  const spot = anchorPoint(display, width, height, overlayAnchor)
+  if (forceAnchor) {
+    target.setBounds({ x: spot.x, y: spot.y, width, height }, false)
+    return
+  }
+  // Keep the user's drag when only the height changes (expand/collapse).
+  const bounds = target.getBounds()
+  const x = Number.isFinite(bounds.x)
+    ? Math.min(Math.max(display.x, bounds.x), display.x + display.width - width)
+    : spot.x
+  const y = Number.isFinite(bounds.y)
+    ? Math.min(Math.max(display.y, bounds.y), display.y + display.height - height)
+    : spot.y
+  target.setBounds({ x, y, width, height }, false)
+}
+
+function pushOverlaySession() {
+  if (!overlayWin || overlayWin.isDestroyed()) return
+  overlayWin.webContents.send('overlay:session', overlaySession)
+}
+
+function showOverlayWindow(forceAnchor = false) {
+  const bar = ensureOverlay()
+  bar.setContentProtection(true)
+  placeOverlay(bar, forceAnchor || !bar.isVisible())
+  pushOverlaySession()
+  if (bar.isMinimized()) bar.restore()
+  bar.showInactive()
+  bar.moveTop()
+}
+
+function hideOverlayWindow() {
+  overlaySession = null
+  overlayExpanded = false
+  if (!overlayWin || overlayWin.isDestroyed()) return
+  overlayWin.hide()
+}
+
 function ensureOverlay() {
   if (overlayWin && !overlayWin.isDestroyed()) return overlayWin
   const display = screen.getPrimaryDisplay().workArea
-  const width = 320
-  const height = 150
+  const width = OVERLAY_WIDTH
+  const height = overlayHeight()
+  const spot = anchorPoint(display, width, height, overlayAnchor)
   overlayWin = new BrowserWindow({
     width,
     height,
-    x: Math.round(display.x + display.width - width - 24),
-    y: Math.round(display.y + 24),
+    x: spot.x,
+    y: spot.y,
     frame: false,
     transparent: true,
     resizable: false,
     movable: true,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
     skipTaskbar: true,
-    focusable: false,
+    focusable: true,
     alwaysOnTop: true,
     hasShadow: false,
     show: false,
@@ -348,8 +520,13 @@ function ensureOverlay() {
   overlayWin.setContentProtection(true)
   overlayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   loadSurface(overlayWin, 'overlay')
+  overlayWin.webContents.on('did-finish-load', () => {
+    pushOverlaySession()
+  })
   overlayWin.on('closed', () => {
     overlayWin = null
+    overlaySession = null
+    overlayExpanded = false
   })
   return overlayWin
 }
@@ -393,12 +570,12 @@ function createWindow() {
     ensureTray()
     if (toldTray || !Notification.isSupported()) return
     toldTray = true
-    new Notification({
+    notify({
       title: 'annotated is still running',
       body: watching
         ? 'You will get a prompt when a meeting starts. Quit from the tray icon to stop.'
         : 'Quit from the tray icon when you are done. Hold Ctrl+Win to dictate anywhere.',
-    }).show()
+    })?.show()
   })
   loadSurface(win, 'app')
 }
@@ -516,14 +693,12 @@ ipcMain.handle('calendar:fetch', async (_event, url) => {
 
 ipcMain.handle('calendar:notify', (_event, payload) => {
   if (!payload || typeof payload.instanceKey !== 'string' || typeof payload.title !== 'string') return
-  if (!Notification.isSupported()) return
-  const note = new Notification({
+  const note = notify({
     title: payload.title.slice(0, 120) || 'Meeting starting',
     body: typeof payload.body === 'string' ? payload.body.slice(0, 180) : 'Turn annotated on for this meeting?',
   })
-  note.on('click', () => {
-    showMain()
-  })
+  if (!note) return
+  note.on('click', () => showMain())
   note.show()
 })
 
@@ -557,6 +732,13 @@ ipcMain.handle('dictate:hide', () => {
   hideDictateBar()
 })
 
+ipcMain.handle('shortcuts:dictate', (event, payload) => {
+  if (!fromMain(event) && !fromDictate(event)) return { ok: false }
+  const chord = payload && typeof payload === 'object' ? payload.chord : null
+  const mode = payload && typeof payload === 'object' ? payload.mode : 'toggle'
+  return { ok: true, ...registerDictateShortcut(chord, mode) }
+})
+
 ipcMain.handle('app:update-settled', () => {})
 
 ipcMain.handle('update:status', () => updates.updateStatus())
@@ -586,6 +768,14 @@ ipcMain.handle('audio:arm-loopback', () => {
 
 function fromMain(event) {
   return Boolean(win && event.sender === win.webContents)
+}
+
+function fromOverlay(event) {
+  return Boolean(overlayWin && event.sender === overlayWin.webContents)
+}
+
+function fromDictate(event) {
+  return Boolean(dictateWin && event.sender === dictateWin.webContents)
 }
 
 function currentLicenseStatus() {
@@ -618,7 +808,11 @@ ipcMain.handle('license:activate', (event, token) => {
 ipcMain.handle('license:clear', (event) => {
   if (!fromMain(event)) return currentLicenseStatus()
   license.clearStored(app.getPath('userData'))
-  if (overlayWin && !overlayWin.isDestroyed()) overlayWin.hide()
+  // Drop coaching cue on the nub; keep the live indicator if a session is open.
+  if (overlaySession) {
+    overlaySession = { ...overlaySession, cue: null }
+    pushOverlaySession()
+  }
   return currentLicenseStatus()
 })
 
@@ -632,22 +826,129 @@ ipcMain.handle('license:account', async (event) => {
   await shell.openExternal(ACCOUNT_URL)
 })
 
+function normalizeOverlayCue(cue) {
+  if (!cue || typeof cue !== 'object') return null
+  const message = typeof cue.message === 'string' ? cue.message.trim() : ''
+  if (!message) return null
+  return {
+    label: typeof cue.label === 'string' && cue.label.trim() ? cue.label.trim() : 'Live cue',
+    message,
+  }
+}
+
+function normalizeOverlayLines(lines) {
+  if (!Array.isArray(lines)) return []
+  return lines
+    .slice(-3)
+    .map((line, index) => {
+      if (!line || typeof line !== 'object') return null
+      const text = typeof line.text === 'string' ? line.text.trim() : ''
+      if (!text) return null
+      return {
+        id: typeof line.id === 'string' && line.id ? line.id : `line-${index}`,
+        speaker: typeof line.speaker === 'string' && line.speaker.trim() ? line.speaker.trim() : 'Speaker',
+        text,
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeOverlayOpacity(value) {
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return 0.94
+  return Math.min(1, Math.max(0.35, Math.round(n * 100) / 100))
+}
+
+function normalizeOverlayPosition(value) {
+  if (value === 'top-right' || value === 'top-left' || value === 'bottom-center' || value === 'center') return value
+  return 'center'
+}
+
+function normalizeOverlaySession(payload) {
+  if (!payload || typeof payload !== 'object') return null
+  const title = typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim() : 'Live meeting'
+  const meetingId = typeof payload.meetingId === 'string' ? payload.meetingId : ''
+  return {
+    meetingId,
+    title,
+    elapsed: typeof payload.elapsed === 'string' && payload.elapsed ? payload.elapsed : '0:00',
+    listening: Boolean(payload.listening),
+    opacity: normalizeOverlayOpacity(payload.opacity),
+    position: normalizeOverlayPosition(payload.position),
+    cue: normalizeOverlayCue(payload.cue),
+    lines: normalizeOverlayLines(payload.lines),
+  }
+}
+
+ipcMain.handle('overlay:session', (event, payload) => {
+  if (!fromMain(event)) return { ok: false }
+  const next = normalizeOverlaySession(payload)
+  if (!next) {
+    hideOverlayWindow()
+    return { ok: true, active: false }
+  }
+  // Coaching cue body stays Unlock-gated; the nub itself stays free.
+  if (currentLicenseStatus().tier !== 'unlock') next.cue = null
+  const positionChanged = next.position !== overlayAnchor
+  overlayAnchor = next.position
+  overlaySession = next
+  showOverlayWindow(positionChanged)
+  return { ok: true, active: true }
+})
+
 ipcMain.handle('overlay:set', (event, cue) => {
   if (!fromMain(event)) return { ok: false }
   const unlocked = currentLicenseStatus().tier === 'unlock'
-  const message = cue && typeof cue.message === 'string' ? cue.message.trim() : ''
-  if (!unlocked || !message) {
-    if (overlayWin && !overlayWin.isDestroyed()) overlayWin.hide()
-    return { ok: false, locked: !unlocked }
+  const nextCue = unlocked ? normalizeOverlayCue(cue) : null
+  if (!overlaySession) {
+    if (!nextCue) return { ok: false, locked: !unlocked }
+    // Legacy path: a cue alone still opens a minimal session.
+    overlaySession = {
+      meetingId: '',
+      title: 'Live meeting',
+      elapsed: '0:00',
+      listening: true,
+      opacity: 0.94,
+      position: overlayAnchor,
+      cue: nextCue,
+      lines: [],
+    }
+    showOverlayWindow()
+    return { ok: true }
   }
-  const bar = ensureOverlay()
-  bar.setContentProtection(true)
-  bar.webContents.send('overlay:cue', {
-    label: typeof cue.label === 'string' ? cue.label : 'Live cue',
-    message,
-  })
-  if (bar.isMinimized()) bar.restore()
-  bar.showInactive()
+  overlaySession = { ...overlaySession, cue: nextCue }
+  pushOverlaySession()
+  return { ok: true, locked: !unlocked && Boolean(cue) }
+})
+
+ipcMain.handle('overlay:expand', (event, expanded) => {
+  if (!fromOverlay(event) && !fromMain(event)) return { ok: false }
+  overlayExpanded = Boolean(expanded)
+  if (!overlayWin || overlayWin.isDestroyed()) return { ok: false }
+  placeOverlay(overlayWin)
+  overlayWin.webContents.send('overlay:expanded', overlayExpanded)
+  return { ok: true, expanded: overlayExpanded }
+})
+
+ipcMain.handle('overlay:action', (event, action) => {
+  if (!fromOverlay(event) && !fromMain(event)) return { ok: false }
+  const kind = String(action || '')
+  if (kind === 'open') {
+    showMain()
+    if (win && !win.isDestroyed()) win.webContents.send('overlay:action', 'open')
+    return { ok: true }
+  }
+  if (kind === 'dismiss') {
+    hideOverlayWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('overlay:action', 'dismiss')
+    return { ok: true }
+  }
+  if (kind === 'end' || kind === 'pause' || kind === 'resume') {
+    if (win && !win.isDestroyed()) win.webContents.send('overlay:action', kind)
+    if (kind === 'end') hideOverlayWindow()
+    return { ok: true }
+  }
+  return { ok: false }
 })
 
 ipcMain.handle('app:login-get', () => Boolean(app.getLoginItemSettings().openAtLogin))
@@ -682,17 +983,11 @@ app.whenReady().then(() => {
   })
   createWindow()
   void updates.checkForAppUpdate()
-  // Ctrl+Win on Windows / Ctrl+Cmd on macOS — toggle the system dictate bar.
-  const chord = process.platform === 'darwin' ? 'Control+Meta' : 'Control+Super'
-  try {
-    globalShortcut.register(chord, () => toggleDictateHotkey())
-  } catch {
-    try {
-      globalShortcut.register('CommandOrControl+Alt+Space', () => toggleDictateHotkey())
-    } catch {
-      /* shortcut unavailable on this machine */
-    }
-  }
+  // Default Ctrl+Win / Ctrl+Cmd; renderer can rebind via shortcuts:dictate.
+  registerDictateShortcut(
+    { ctrl: true, shift: false, alt: false, meta: true, key: '' },
+    'toggle',
+  )
 })
 
 app.on('will-quit', () => {

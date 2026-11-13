@@ -192,7 +192,7 @@ Effort: **S** small · **M** medium · **L** large.
 | --- | --- | --- | --- |
 | MCP notes access | P1 | M | High leverage for AI-tool users |
 | Cross-meeting memory search / ask-all | P1 | M | FTS5 + chat across meetings |
-| Calendar brief (Outlook / ICS) | P2 | L | Graph consent friction |
+| Calendar sync (Google + ICS; Outlook parked) | P1 | M | Google desktop OAuth. Outlook waits on an Entra tenant (issue 3). |
 | Polished share UX | P2 | M | After export works |
 
 ---
@@ -207,6 +207,7 @@ The app is not on the Microsoft Store. There is no Partner Center listing, no MS
 - Chromium ships with Electron. No WebView2 bootstrapper.
 - Authenticode-sign the installer. `electron-updater` rejects an update whose publisher does not match this build.
 - People download it from annotated.click. GitHub is the update feed.
+- `bun run desktop:pack` writes `electron/oauth.json` (gitignored) before electron-builder. The installer ships that file and leaves `oauth.local.json` out. Connect Google needs `CRUNCHCALL_GOOGLE_CLIENT_SECRET` at pack time. See `docs/CALENDAR.md`.
 
 ### Package size and models
 

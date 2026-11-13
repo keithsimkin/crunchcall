@@ -11,7 +11,7 @@ if (typeof window !== 'undefined' && window.crunchcall) {
   document.documentElement.dataset.desktop = 'true'
 }
 
-const hash = window.location.hash
+const hash = window.location.hash.split('?')[0]
 const surface = hash === '#dictate-bar' ? <DictateBarApp /> : hash === '#overlay' ? <OverlayApp /> : <App />
 
 createRoot(document.getElementById('root')!).render(<StrictMode>{surface}</StrictMode>)

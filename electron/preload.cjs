@@ -43,16 +43,42 @@ contextBridge.exposeInMainWorld('crunchcall', {
   setChrome: (theme) => ipcRenderer.invoke('window:chrome', theme),
   engine: (method, params) => ipcRenderer.invoke('engine:call', method, params || {}),
   armLoopback: () => ipcRenderer.invoke('audio:arm-loopback'),
+  setOverlaySession: (session) => ipcRenderer.invoke('overlay:session', session),
   setOverlay: (cue) => ipcRenderer.invoke('overlay:set', cue),
+  setOverlayExpanded: (expanded) => ipcRenderer.invoke('overlay:expand', Boolean(expanded)),
+  overlayAction: (action) => ipcRenderer.invoke('overlay:action', String(action || '')),
+  onOverlaySession: (callback) => {
+    const listener = (_event, session) => callback(session)
+    ipcRenderer.on('overlay:session', listener)
+    return () => ipcRenderer.removeListener('overlay:session', listener)
+  },
+  onOverlayExpanded: (callback) => {
+    const listener = (_event, expanded) => callback(Boolean(expanded))
+    ipcRenderer.on('overlay:expanded', listener)
+    return () => ipcRenderer.removeListener('overlay:expanded', listener)
+  },
   onOverlay: (callback) => {
-    const listener = (_event, cue) => callback(cue)
-    ipcRenderer.on('overlay:cue', listener)
-    return () => ipcRenderer.removeListener('overlay:cue', listener)
+    // Legacy cue channel — also derived from session updates for older callers.
+    const fromCue = (_event, cue) => callback(cue)
+    const fromSession = (_event, session) => callback(session && session.cue ? session.cue : null)
+    ipcRenderer.on('overlay:cue', fromCue)
+    ipcRenderer.on('overlay:session', fromSession)
+    return () => {
+      ipcRenderer.removeListener('overlay:cue', fromCue)
+      ipcRenderer.removeListener('overlay:session', fromSession)
+    }
+  },
+  onOverlayAction: (callback) => {
+    const listener = (_event, action) => callback(String(action || ''))
+    ipcRenderer.on('overlay:action', listener)
+    return () => ipcRenderer.removeListener('overlay:action', listener)
   },
   openAtLogin: () => ipcRenderer.invoke('app:login-get'),
   setOpenAtLogin: (on) => ipcRenderer.invoke('app:login-set', Boolean(on)),
   pasteDictation: (text) => ipcRenderer.invoke('dictate:paste', String(text || '')),
   hideDictateBar: () => ipcRenderer.invoke('dictate:hide'),
+  setDictateShortcut: (payload) =>
+    ipcRenderer.invoke('shortcuts:dictate', payload && typeof payload === 'object' ? payload : {}),
   openExternal: (url) => ipcRenderer.invoke('shell:open', String(url || '')),
   licenseStatus: () => ipcRenderer.invoke('license:status'),
   activateLicense: (token) => ipcRenderer.invoke('license:activate', String(token || '')),

@@ -116,6 +116,22 @@ export function resetCalendar() {
   syncWatching()
 }
 
+/** Local screenshot / walkthrough seed. Does not hit Google or Outlook. */
+export function seedDemoCalendar(events: CalendarEvent[]) {
+  refreshGen += 1
+  fetchedAt = Date.now()
+  update({
+    enabled: true,
+    askToStart: true,
+    source: { kind: 'file', name: 'demo calendar' },
+    events: events.filter(validEvent),
+    syncedAt: Date.now(),
+    error: null,
+    prompted: [],
+    dismissed: [],
+  })
+}
+
 export function dismiss(instanceKey: string) {
   if (state.dismissed.includes(instanceKey) && state.prompted.includes(instanceKey)) return
   update({
