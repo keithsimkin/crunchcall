@@ -30,8 +30,8 @@ function readFlag(argv, name) {
 function demoRequested(argv = process.argv, env = process.env) {
   if (env && env.ANNOTATED_DEMO === '1') return true
   if (argv.includes('--demo')) return true
-  // A capture always uses the demo profile so it cannot write a real account.
-  return readFlag(argv, 'capture') !== null
+  // Capture and record always use the demo profile so they cannot write a real account.
+  return readFlag(argv, 'capture') !== null || readFlag(argv, 'record') !== null
 }
 
 function captureDirectory(argv = process.argv) {
@@ -39,6 +39,19 @@ function captureDirectory(argv = process.argv) {
   if (!value) return null
   return path.resolve(value)
 }
+
+function recordDirectory(argv = process.argv) {
+  const value = readFlag(argv, 'record')
+  if (!value) return null
+  return path.resolve(value)
+}
+
+function chapterStamp(startMs, nowMs) {
+  const seconds = Math.max(0, nowMs - startMs) / 1000
+  return Math.round(seconds * 10) / 10
+}
+
+const RECORD_FILES = ['walkthrough.webm', 'walkthrough.json', 'overlay.webm', 'overlay.json']
 
 function demoUserDataPath(appData) {
   return path.join(appData, 'annotated-demo')
@@ -86,9 +99,12 @@ function surfaceHash(hash, demo) {
 
 module.exports = {
   CAPTURE_SCREENS,
+  RECORD_FILES,
   readFlag,
   demoRequested,
   captureDirectory,
+  recordDirectory,
+  chapterStamp,
   demoUserDataPath,
   demoLicenseStatus,
   demoOverlaySession,

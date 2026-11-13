@@ -20,7 +20,7 @@ import {
 import type { CalendarEvent } from '../features/calendar/ics'
 import { engineAvailable } from '../features/engines/call'
 import { engineById, engineDefaults } from '../features/engines/catalog'
-import type { MeetingRow, ProjectFolder } from './fixtures'
+import { demoAsk, type MeetingRow, type ProjectFolder } from './fixtures'
 import { EyeIcon, PlusIcon, SparkIcon } from './icons'
 import { profileInitials } from './profile'
 import type { SettingsSection } from './settingsState'
@@ -35,6 +35,7 @@ type FloatingAskProps = {
   userName: string
   hidden?: boolean
   demo?: { question: string; answer: string; label: string; pulls: AskPull[] } | null
+  recording?: boolean
   onOpenSettings: (section: SettingsSection) => void
   onOpenMeeting: (meetingId: string, utteranceId?: string) => void
 }
@@ -261,6 +262,7 @@ export function FloatingAsk({
   userName,
   hidden = false,
   demo = null,
+  recording = false,
   onOpenSettings,
   onOpenMeeting,
 }: FloatingAskProps) {
@@ -297,6 +299,76 @@ export function FloatingAsk({
     setOpen(false)
     setMessages([])
   }
+
+  const draftRef = useRef('')
+  const askRef = useRef({ writerId, hasWriterKey, focus, rows, folders, upcoming })
+  useEffect(() => {
+    draftRef.current = draft
+    askRef.current = { writerId, hasWriterKey, focus, rows, folders, upcoming }
+  })
+
+  useEffect(() => {
+    if (!recording) return
+    window.__annotatedTypeAsk = async (text: string) => {
+      setOpen(true)
+      setMessages([])
+      setDraft('')
+      let next = ''
+      for (const char of text) {
+        next += char
+        setDraft(next)
+        setCaret(next.length)
+        await new Promise((resolve) => window.setTimeout(resolve, 46))
+      }
+    }
+    window.__annotatedSubmitAsk = async () => {
+      const question = draftRef.current.trim()
+      if (!question) return
+      setOpen(true)
+      setBusy(true)
+      setDraft('')
+      setCaret(0)
+      const user: ChatTurn = {
+        id: 'tour-question',
+        role: 'user',
+        text: question,
+        contextLabel: 'Pricing review with Northwind',
+      }
+      setMessages([user])
+      const input = askRef.current
+      const result = await Promise.race([
+        completeAsk({
+          question,
+          writerId: input.writerId,
+          hasWriterKey: input.hasWriterKey,
+          focus: input.focus,
+          rows: input.rows,
+          folders: input.folders,
+          upcoming: input.upcoming,
+        }),
+        new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 1500)),
+      ])
+      const usable =
+        result != null &&
+        result.ok &&
+        !/not linked|not built|not ready|api key|empty reply/i.test(result.text)
+      const text = usable ? result.text : demoAsk.answer
+      const pulls = usable && result.pulls.length ? result.pulls : demoAsk.pulls
+      const words = text.split(/(\s+)/)
+      let built = ''
+      for (const word of words) {
+        built += word
+        setMessages([user, { id: 'tour-answer', role: 'assistant', text: built }])
+        await new Promise((resolve) => window.setTimeout(resolve, 28))
+      }
+      setMessages([user, { id: 'tour-answer', role: 'assistant', text, pulls }])
+      setBusy(false)
+    }
+    return () => {
+      delete window.__annotatedTypeAsk
+      delete window.__annotatedSubmitAsk
+    }
+  }, [recording])
 
   const focusMeetingId = focus.page === 'notes' ? focus.meetingId : null
   if (focusMeetingId && focusMeetingId !== pinnedFocusId) {

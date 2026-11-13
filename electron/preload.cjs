@@ -95,6 +95,8 @@ contextBridge.exposeInMainWorld('crunchcall', {
     return () => ipcRenderer.removeListener('update:status', listener)
   },
   announce: (payload) => ipcRenderer.invoke('app:announce', payload && typeof payload === 'object' ? payload : {}),
+  tourChapter: (title) => ipcRenderer.send('tour:chapter', String(title || '')),
+  recordOverlay: () => ipcRenderer.invoke('tour:overlay'),
   settleUpdateCheck: () => ipcRenderer.invoke('app:update-settled'),
   onAppCommand: (callback) => {
     commandListeners.add(callback)

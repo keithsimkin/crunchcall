@@ -18,6 +18,7 @@ import { needsLicensePrompt, sitePage } from './ui/licenseGate'
 import { SITE_URL, useLicense } from './ui/useLicense'
 import { useUpdates } from './ui/useUpdates'
 import type { AskFocus } from './features/ask/context'
+import { runDemoTour } from './ui/demoTour'
 import { DictatePopup } from './ui/DictatePopup'
 import { MeetingsScreen, StartAsk } from './ui/MeetingsScreen'
 import { useCalendarClock, useCalendarSignIn } from './ui/useCalendar'
@@ -96,6 +97,8 @@ export default function App() {
     return window.location.hash !== '#app'
   })
   const desktop = typeof window !== 'undefined' && Boolean(window.crunchcall)
+  const recording =
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('record') === '1'
   const person = profile.name.trim()
 
   useEffect(() => {
@@ -331,6 +334,14 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!recording) return
+    window.__annotatedTour = () => runDemoTour()
+    return () => {
+      delete window.__annotatedTour
+    }
+  }, [recording])
+
+  useEffect(() => {
     if (!deskReady) return
     void saveFolders(folders)
   }, [folders, deskReady])
@@ -534,6 +545,7 @@ export default function App() {
 
   return (
     <div className="app">
+      {recording ? <div id="demo-cursor" className="demo-cursor" aria-hidden="true" /> : null}
       <aside className="side">
         <button
           type="button"
@@ -715,6 +727,7 @@ export default function App() {
             title={view.title}
             meetingId={view.meetingId}
             autoStart={view.fresh}
+            staggerCues={recording}
             speechId={settings.speechId}
             writerId={settings.writerId}
             coachId={settings.coachId}
@@ -839,6 +852,7 @@ export default function App() {
           userName={person}
           hidden={settingsOpen !== null}
           demo={showAsk ? demoAsk : null}
+          recording={recording}
           onOpenSettings={setSettingsOpen}
           onOpenMeeting={openFromAsk}
         />

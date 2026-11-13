@@ -27,6 +27,7 @@ type LiveScreenProps = {
   onUnlock: () => void
   hasWriterKey: boolean
   autoStart: boolean
+  staggerCues?: boolean
   onBack: () => void
   onFinished: (meetingId: string) => void
 }
@@ -65,6 +66,7 @@ export function LiveScreen({
   onUnlock,
   hasWriterKey,
   autoStart,
+  staggerCues = false,
   onBack,
   onFinished,
 }: LiveScreenProps) {
@@ -86,6 +88,7 @@ export function LiveScreen({
   const [mics, setMics] = useState<MicOption[]>([{ id: 'default', name: 'Default' }])
   const [overlayOn, setOverlayOn] = useState(showCues)
   const [cuesOnScreen, setCuesOnScreen] = useState<{ id: string; label: string; message: string }[]>([])
+  const [cueCount, setCueCount] = useState(staggerCues ? 0 : 99)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(meetingId ?? null)
@@ -239,13 +242,24 @@ export function LiveScreen({
   }, [lines.length])
 
   useEffect(() => {
+    if (!staggerCues) return
+    window.__annotatedRevealCue = () => setCueCount((count) => count + 1)
+    return () => {
+      delete window.__annotatedRevealCue
+    }
+  }, [staggerCues])
+
+  const displayedCues = staggerCues ? cuesOnScreen.slice(0, cueCount) : cuesOnScreen
+
+  useEffect(() => {
     const desktop = Boolean(window.crunchcall?.setOverlaySession)
     if (!desktop) return
     if (!showMeetingIndicator || nubDismissed || ending.current || !(sessionId || armed)) {
       void window.crunchcall?.setOverlaySession?.(null)
       return
     }
-    const lead = unlocked && overlayOn && showCues ? cuesOnScreen[0] : undefined
+    const lead =
+      unlocked && overlayOn && showCues && (!staggerCues || cueCount > 0) ? cuesOnScreen[0] : undefined
     void window.crunchcall?.setOverlaySession?.({
       meetingId: sessionId ?? meetingRef.current ?? '',
       title: title || 'Live meeting',
@@ -273,6 +287,8 @@ export function LiveScreen({
     overlayOn,
     showCues,
     cuesOnScreen,
+    cueCount,
+    staggerCues,
     lines,
   ])
 
@@ -457,7 +473,7 @@ export function LiveScreen({
   }
   endRef.current = end
 
-  const lead = unlocked && overlayOn && showCues ? cuesOnScreen[0] : undefined
+  const lead = unlocked && overlayOn && showCues ? displayedCues[0] : undefined
   const selectedMic = mics.find((item) => item.id === inputDevice) ?? mics[0]
   const micValue = mics.some((item) => item.id === inputDevice) ? inputDevice : 'default'
 
@@ -618,17 +634,17 @@ export function LiveScreen({
             <section className="panel" aria-label="Cues">
               <div className="panel-h">
                 <h2>Cues</h2>
-                {!overlayOn && cuesOnScreen[0] ? (
+                {!overlayOn && displayedCues[0] ? (
                   <button type="button" className="text-btn" onClick={() => setOverlayOn(true)}>
                     Show cue
                   </button>
                 ) : null}
               </div>
-              {cuesOnScreen.length === 0 ? (
+              {displayedCues.length === 0 ? (
                 <p className="empty tight">Cues land here mid-call. They stay off your screen share.</p>
               ) : (
                 <ul className="cue-list">
-                  {cuesOnScreen.map((cue) => (
+                  {displayedCues.map((cue) => (
                     <li key={cue.id} className="cue">
                       <p className="cue-kind">{cue.label}</p>
                       <p>{cue.message}</p>

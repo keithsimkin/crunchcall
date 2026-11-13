@@ -77,6 +77,10 @@ declare global {
   const __CRUNCHCALL_VERSION__: string
   interface Window {
     __annotatedCapture?: (target: string) => Promise<boolean>
+    __annotatedTour?: () => Promise<void>
+    __annotatedRevealCue?: () => void
+    __annotatedTypeAsk?: (text: string) => Promise<void>
+    __annotatedSubmitAsk?: () => Promise<void>
     crunchcall?: {
       fetchCalendar: (url: string) => Promise<CalendarFetchResult>
       calendarSignIn: () => Promise<CalendarSignIn>
@@ -130,6 +134,8 @@ declare global {
       installUpdate?: () => Promise<UpdateStatus>
       onUpdate?: (callback: (status: UpdateStatus) => void) => () => void
       announce?: (payload: AppNotice) => Promise<void>
+      tourChapter?: (title: string) => void
+      recordOverlay?: () => Promise<void>
       settleUpdateCheck?: () => Promise<void>
       onAppCommand?: (callback: (command: AppCommand) => void) => () => void
     }
