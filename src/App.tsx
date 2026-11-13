@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CalendarEvent } from './features/calendar/ics'
+import { meetingsCalendarEmpty } from './features/calendar/connectCopy'
 import { dismiss, onCalendarStart, resetCalendar, setActiveMeeting } from './features/calendar/store'
 import { clearDeskStorage } from './lib/storage'
 import { setIndexedNotes } from './features/desk/notesIndex'
@@ -26,7 +27,7 @@ import { LandingPage } from './ui/LandingPage'
 import { LiveScreen } from './ui/LiveScreen'
 import { MeetingsScreen, StartAsk } from './ui/MeetingsScreen'
 import { NotesScreen } from './ui/NotesScreen'
-import { useCalendarClock } from './ui/useCalendar'
+import { useCalendarClock, useCalendarSignIn } from './ui/useCalendar'
 import './App.css'
 
 type View =
@@ -72,6 +73,7 @@ export default function App() {
   const license = useLicense()
   const update = useUpdates()
   const { calendar, upcoming, due, now } = useCalendarClock()
+  const { desktop: calendarDesktop, signIn: calendarSignIn } = useCalendarSignIn()
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null)
   const [gearSpin, setGearSpin] = useState(false)
   const [profile, setProfile] = useState(readProfile)
@@ -569,7 +571,7 @@ export default function App() {
             calendarOn={calendar.enabled}
             calendarError={calendar.error}
             calendarEmpty={
-              calendar.source ? 'Nothing coming up in the next two weeks.' : 'Connect Google or Outlook under Calendar, or add a private link.'
+              calendar.source ? 'Nothing coming up in the next two weeks.' : meetingsCalendarEmpty(calendarDesktop, calendarSignIn)
             }
             upcoming={upcoming}
             due={due}

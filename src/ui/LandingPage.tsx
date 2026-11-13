@@ -260,7 +260,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
             </a>
           </nav>
           <button type="button" className="lp-nav-cta" onClick={() => onOpenApp('list')}>
-            Download app
+            Open the app
           </button>
         </header>
       </div>
@@ -643,7 +643,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                 Integrations
               </a>
               <button type="button" onClick={() => onOpenApp('list')}>
-                Download the app
+                Open the app
               </button>
             </div>
             <div className="lp-footcol">

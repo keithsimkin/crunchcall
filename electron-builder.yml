@@ -6,6 +6,9 @@ files:
   - dist/**/*
   - electron/**/*
   - package.json
+  # scripts/write-oauth-config.mjs writes this before packing. It is gitignored
+  # because it may hold a client secret, so name it here as well as via electron/**/*.
+  - electron/oauth.json
   - "!electron/oauth.local.json"
   - "!electron/**/*.test.mjs"
 asar: true

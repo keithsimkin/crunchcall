@@ -18,24 +18,63 @@ const MICROSOFT_AUTH = 'https://login.microsoftonline.com/common/oauth2/v2.0/aut
 const MICROSOFT_TOKEN = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
 const SIGN_IN_MS = 5 * 60 * 1000
 const DAY_MS = 86_400_000
-
-function loadClientIds() {
-  let local = {}
-  try {
-    local = JSON.parse(fs.readFileSync(path.join(__dirname, 'oauth.local.json'), 'utf8'))
-  } catch {
-    local = {}
-  }
-  return {
-    google: cleanId(process.env.CRUNCHCALL_GOOGLE_CLIENT_ID || local.googleClientId),
-    microsoft: cleanId(process.env.CRUNCHCALL_MICROSOFT_CLIENT_ID || local.microsoftClientId),
-  }
-}
+const DEFAULT_GOOGLE_CLIENT_ID = '333278308187-f51jcakj57d2q3c2bi1v4u3bt2ku03lo.apps.googleusercontent.com'
 
 function cleanId(value) {
   const text = typeof value === 'string' ? value.trim() : ''
   if (text.length < 8 || /\s/.test(text)) return ''
   return text
+}
+
+function firstCredential(...values) {
+  for (const value of values) {
+    const text = cleanId(value)
+    if (text) return text
+  }
+  return ''
+}
+
+function readOAuthFile(file) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function resolveOAuthConfig({ env = {}, local = {}, packaged = {} } = {}) {
+  return {
+    googleClientId: firstCredential(
+      env.CRUNCHCALL_GOOGLE_CLIENT_ID,
+      local.googleClientId,
+      packaged.googleClientId,
+      DEFAULT_GOOGLE_CLIENT_ID,
+    ),
+    googleClientSecret: firstCredential(
+      env.CRUNCHCALL_GOOGLE_CLIENT_SECRET,
+      local.googleClientSecret,
+      packaged.googleClientSecret,
+    ),
+    microsoftClientId: firstCredential(
+      env.CRUNCHCALL_MICROSOFT_CLIENT_ID,
+      local.microsoftClientId,
+      packaged.microsoftClientId,
+    ),
+  }
+}
+
+function loadClientIds(dir = __dirname, env = process.env) {
+  const config = resolveOAuthConfig({
+    env,
+    local: readOAuthFile(path.join(dir, 'oauth.local.json')),
+    packaged: readOAuthFile(path.join(dir, 'oauth.json')),
+  })
+  return {
+    google: config.googleClientId,
+    googleSecret: config.googleClientSecret,
+    microsoft: config.microsoftClientId,
+  }
 }
 
 function createPkce() {
@@ -104,6 +143,7 @@ function createCalendarAccounts(options) {
   const openExternal = options.openExternal
   const clientIds = {
     google: cleanId(options.clientIds && options.clientIds.google),
+    googleSecret: cleanId(options.clientIds && options.clientIds.googleSecret),
     microsoft: cleanId(options.clientIds && options.clientIds.microsoft),
   }
   const accessCache = new Map()
@@ -113,7 +153,7 @@ function createCalendarAccounts(options) {
     const saved = readFile()
     return {
       configured: {
-        google: Boolean(clientIds.google),
+        google: Boolean(clientIds.google && clientIds.googleSecret),
         microsoft: Boolean(clientIds.microsoft),
       },
       connected: {
@@ -224,9 +264,15 @@ function createCalendarAccounts(options) {
 
   function setupProblem(provider) {
     if (provider !== 'google' && provider !== 'microsoft') return 'Choose Google or Outlook.'
-    if (!clientIds[provider]) return notSetUp(provider)
+    if (provider === 'google' && (!clientIds.google || !clientIds.googleSecret)) return notSetUp(provider)
+    if (provider === 'microsoft' && !clientIds.microsoft) return notSetUp(provider)
     if (!seals()) return 'This PC cannot store a sign-in securely.'
     return ''
+  }
+
+  function tokenFields(provider, fields) {
+    if (provider === 'google' && clientIds.googleSecret) fields.client_secret = clientIds.googleSecret
+    return fields
   }
 
   function seals() {
@@ -239,15 +285,15 @@ function createCalendarAccounts(options) {
   }
 
   async function exchange(provider, { code, redirectUri, verifier }) {
-    const fields = {
+    const fields = tokenFields(provider, {
       client_id: clientIds[provider],
       code,
       redirect_uri: redirectUri,
       grant_type: 'authorization_code',
       code_verifier: verifier,
-    }
+    })
     const result = await postForm(provider === 'google' ? GOOGLE_TOKEN : MICROSOFT_TOKEN, fields)
-    if (!result.ok || !result.json) return { ok: false, error: reachMessage(provider) }
+    if (!result.ok || !result.json) return tokenFailure(provider, result)
     const access = result.json.access_token
     const refresh = result.json.refresh_token
     if (!access || !refresh) {
@@ -259,11 +305,11 @@ function createCalendarAccounts(options) {
   async function accessToken(provider, refresh) {
     const cached = accessCache.get(provider)
     if (cached && cached.expiresAt > Date.now() + 60_000) return { ok: true, token: cached.token }
-    const fields = {
+    const fields = tokenFields(provider, {
       client_id: clientIds[provider],
       grant_type: 'refresh_token',
       refresh_token: refresh,
-    }
+    })
     if (provider === 'microsoft') fields.scope = MICROSOFT_SCOPE
     const result = await postForm(provider === 'google' ? GOOGLE_TOKEN : MICROSOFT_TOKEN, fields)
     if (!result.ok || !result.json || !result.json.access_token) {
@@ -271,6 +317,7 @@ function createCalendarAccounts(options) {
         disconnect(provider)
         return { ok: false, error: reconnectMessage(provider) }
       }
+      if (clientRejected(result)) return { ok: false, error: notSetUp(provider) }
       return { ok: false, error: reachMessage(provider) }
     }
     if (result.json.refresh_token && result.json.refresh_token !== refresh) {
@@ -493,6 +540,18 @@ function signInError(provider, error) {
   return reachMessage(provider)
 }
 
+function tokenFailure(provider, result) {
+  if (clientRejected(result)) return { ok: false, error: notSetUp(provider) }
+  return { ok: false, error: reachMessage(provider) }
+}
+
+function clientRejected(result) {
+  const code = result && result.json && result.json.error
+  if (code === 'invalid_client' || code === 'unauthorized_client') return true
+  const description = result && result.json && typeof result.json.error_description === 'string' ? result.json.error_description : ''
+  return code === 'invalid_request' && /client_secret/i.test(description)
+}
+
 function notSetUp(provider) {
   return `${providerName(provider)} sign-in is not set up in this copy of annotated yet.`
 }
@@ -698,6 +757,7 @@ async function readJsonResponse(response) {
 
 module.exports = {
   loadClientIds,
+  resolveOAuthConfig,
   createPkce,
   authUrl,
   mapGoogleEvents,
@@ -705,4 +765,5 @@ module.exports = {
   createCalendarAccounts,
   GOOGLE_SCOPE,
   MICROSOFT_SCOPE,
+  DEFAULT_GOOGLE_CLIENT_ID,
 }

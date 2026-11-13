@@ -6,7 +6,7 @@ await withAppsumo(async ({ tool }) => {
   const curl = ticket.curl || ''
   // Redact ticket/secrets from curl for inspection
   const redacted = curl
-    .replace(/ticket=[^&\s\"']+/gi, 'ticket=REDACTED')
+    .replace(/ticket=[^&\s"']+/gi, 'ticket=REDACTED')
     .replace(/[A-Za-z0-9_-]{20,}/g, (m) => m.length > 40 ? 'REDACTED' : m)
   console.log(JSON.stringify({
     keys: Object.keys(ticket),

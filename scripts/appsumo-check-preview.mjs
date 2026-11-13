@@ -6,7 +6,6 @@ await withAppsumo(async ({ tool }) => {
   const preview = await tool('preview_listing', { submission_id: 235368 })
   fs.writeFileSync('C:/TREA/meatola/.appsumo-preview.json', JSON.stringify(preview, null, 2))
   const pdp = preview.pdp || {}
-  const dump = JSON.stringify(pdp)
   const supportHits = []
   function walk(obj, path='') {
     if (!obj || typeof obj !== 'object') return

@@ -18,7 +18,7 @@ const fields = {
     founder_posts: [
       {
         title: 'Why I built annotated',
-        message: 'I got tired of notetaker bots showing up in every call. Clients noticed them. Some calls felt less candid the moment a guest labeled \"AI notetaker\" joined.\n\nSo I built annotated to stay on my PC instead. It listens locally, keeps the transcript on this machine, and gives me cues that stay off a screen share. When the call ends, I want owners and next steps without uploading the recording somewhere else.\n\nThis AppSumo deal is the lifetime way to unlock that on your Windows PCs.',
+        message: 'I got tired of notetaker bots showing up in every call. Clients noticed them. Some calls felt less candid the moment a guest labeled "AI notetaker" joined.\n\nSo I built annotated to stay on my PC instead. It listens locally, keeps the transcript on this machine, and gives me cues that stay off a screen share. When the call ends, I want owners and next steps without uploading the recording somewhere else.\n\nThis AppSumo deal is the lifetime way to unlock that on your Windows PCs.',
       },
     ],
   },
