@@ -434,6 +434,24 @@ test('packaged oauth.json is used when env and the local file are empty', () => 
   })
 })
 
+test('oauth.local.json with a leading UTF-8 BOM still loads the google secret', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crunchcall-oauth-'))
+  temps.push(dir)
+  fs.writeFileSync(
+    path.join(dir, 'oauth.local.json'),
+    `\uFEFF${JSON.stringify({
+      googleClientId: 'bom-google-client',
+      googleClientSecret: 'bom-secret-value',
+      microsoftClientId: 'bom-ms-client',
+    })}`,
+  )
+  expect(loadClientIds(dir, {})).toEqual({
+    google: 'bom-google-client',
+    googleSecret: 'bom-secret-value',
+    microsoft: 'bom-ms-client',
+  })
+})
+
 test('the example oauth file publishes the google client id and leaves the secret empty', () => {
   const example = JSON.parse(fs.readFileSync(new URL('./oauth.example.json', import.meta.url), 'utf8'))
   expect(example.googleClientId).toBe(DEFAULT_GOOGLE_CLIENT_ID)
