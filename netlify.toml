@@ -29,6 +29,45 @@ to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/redeem/api/license/:
 status = 200
 force = true
 
+[[redirects]]
+from = "/api/checkout"
+to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/billing/api/checkout"
+status = 200
+force = true
+
+[[redirects]]
+from = "/api/account"
+to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/billing/api/account"
+status = 200
+force = true
+
+[[redirects]]
+from = "/api/account/*"
+to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/billing/api/account/:splat"
+status = 200
+force = true
+
+[[redirects]]
+from = "/dodo/webhook"
+to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/billing/dodo/webhook"
+status = 200
+force = true
+
+[[redirects]]
+from = "/buy"
+to = "/index.html"
+status = 200
+
+[[redirects]]
+from = "/account"
+to = "/index.html"
+status = 200
+
+[[redirects]]
+from = "/account/*"
+to = "/index.html"
+status = 200
+
 [[edge_functions]]
 function = "redeem-html"
 path = "/redeem"

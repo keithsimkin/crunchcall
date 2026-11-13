@@ -1047,7 +1047,7 @@ function LicensePage({ license }: { license: LicenseDesk }) {
   const unlocked = status?.tier === 'unlock'
   const plan = !desktop ? 'Checked in the desktop app' : unlocked ? 'Unlock' : 'Free'
   const appsumo = Boolean(status?.order?.startsWith('appsumo_'))
-  const seatActive = appsumo && status?.license === 'valid' && status?.seat === 'active'
+  const seatActive = status?.license === 'valid' && status?.seat === 'active'
   const canActivate =
     Boolean(token.trim()) || (appsumo && status?.license === 'valid' && status?.seat !== 'active')
 

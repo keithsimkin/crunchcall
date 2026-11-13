@@ -11,6 +11,10 @@ import { CalendarIcon, DownloadIcon, ExternalLinkIcon, FolderIcon, GearIcon, Hom
 import { emptyProfile, profileInitials, readProfile, writeProfile, type Profile } from './ui/profile'
 import { useSettingsState, type SettingsSection } from './ui/settingsState'
 import { eventMatchesChord } from './ui/shortcuts'
+import { AccountPage } from './ui/AccountPage'
+import { BuyPage } from './ui/BuyPage'
+import { LicensePrompt } from './ui/LicensePrompt'
+import { needsLicensePrompt, sitePage } from './ui/licenseGate'
 import { SITE_URL, useLicense } from './ui/useLicense'
 import { useUpdates } from './ui/useUpdates'
 import type { AskFocus } from './features/ask/context'
@@ -419,6 +423,12 @@ export default function App() {
     }
     window.open(SITE_URL, '_blank', 'noopener,noreferrer')
   }
+
+  const page = typeof window === 'undefined' ? null : sitePage(window.location.pathname)
+  if (!desktop && page === 'buy') return <BuyPage />
+  if (!desktop && page === 'account') return <AccountPage />
+  if (desktop && !license.status) return null
+  if (needsLicensePrompt(desktop, license.status)) return <LicensePrompt refresh={license.refresh} />
 
   if (marketing) {
     return (

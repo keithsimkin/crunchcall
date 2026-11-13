@@ -901,9 +901,8 @@ ipcMain.handle('license:activate', async (event, token) => {
       })
     }
   }
-  if (seat.seatRequired(verified.order)) {
-    const deviceId = seat.currentDeviceId(dir)
-    if (!deviceId) return { ok: false, message: 'Could not identify this PC.' }
+  const deviceId = seat.currentDeviceId(dir)
+  if (deviceId) {
     const claimed = await seat.claimSeat({
       dir,
       token: text,
@@ -912,7 +911,10 @@ ipcMain.handle('license:activate', async (event, token) => {
       deviceLabel: seat.deviceLabel(),
       now: Math.floor(Date.now() / 1000),
     })
-    if (!claimed.ok) return { ok: false, message: claimed.message }
+    const mustSeat = seat.seatRequired(verified.order) || claimed.reason === 'limit_reached'
+    if (!claimed.ok && mustSeat) return { ok: false, message: claimed.message }
+  } else if (seat.seatRequired(verified.order)) {
+    return { ok: false, message: 'Could not identify this PC.' }
   }
   const saved = license.writeStored(dir, text, license.bundledPublicKey())
   if (!saved.ok) return { ok: false, message: license.explainReason(saved.reason) }
