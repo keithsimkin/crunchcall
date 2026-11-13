@@ -1,12 +1,15 @@
-# annotated.click is the Netlify site (annotation1.netlify.app). This repo had
-# no netlify.toml; the landing assets in public/ are what that site publishes.
-# These rules only add the redeem proxy. Build command and publish directory
-# stay whatever the Netlify UI already uses.
+# annotated.click is Netlify site bespoke-cactus-bc1032 (annotation1.netlify.app).
+# The site builds with `bun run build` and publishes `dist`. Those settings are
+# repeated here so this file does not fall back to publishing the repo root.
 #
 # Supabase serves GET text/html as text/plain on *.supabase.co. The edge
 # function below reads x-annotated-content-type and restores text/html after
 # the proxy, and drops the sandbox content-security-policy Supabase adds.
 # A status 200 rewrite keeps the method and body.
+
+[build]
+  command = "bun run build"
+  publish = "dist"
 
 [[redirects]]
 from = "/redeem"

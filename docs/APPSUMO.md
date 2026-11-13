@@ -24,7 +24,7 @@ To move a code, open annotated on the old PC, go to Settings, then License, and 
 
 Nothing in this change was applied to Supabase or Netlify. The Supabase project ref is `nnanwekmhkxcwxrbhtld`. The site is the Netlify project behind `annotated.click` and `annotation1.netlify.app`. Run the commands below from a machine that is logged into both.
 
-`netlify.toml` at the repo root proxies `/redeem*` and `/api/license/*` to the redeem function. This repository had no Netlify config file; the landing assets in `public/` are what that site publishes, so the proxy belongs here. Paths outside those two prefixes stay on the existing site. A status 200 rewrite keeps the HTTP method and body.
+`netlify.toml` at the repo root builds with `bun run build`, publishes `dist`, and proxies `/redeem*` and `/api/license/*` to the redeem function. This repository had no Netlify config file; the landing assets in `public/` are what that site publishes, so the proxy belongs here. Paths outside those two prefixes stay on the existing site. A status 200 rewrite keeps the HTTP method and body.
 
 ## 1. Database
 
