@@ -1,0 +1,28 @@
+name = "annotated-redeem"
+main = "src/index.mjs"
+compatibility_date = "2026-11-13"
+compatibility_flags = [ "nodejs_compat" ]
+workers_dev = false
+
+# Secrets are set with `wrangler secret put`, not in this file:
+# ANNOTATED_LICENSE_PRIVATE_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+[secrets]
+required = [ "ANNOTATED_LICENSE_PRIVATE_KEY", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY" ]
+
+[observability]
+enabled = true
+
+[observability.logs]
+head_sampling_rate = 1
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 1
+
+[[routes]]
+pattern = "annotated.click/redeem*"
+zone_name = "annotated.click"
+
+[[routes]]
+pattern = "annotated.click/api/license/*"
+zone_name = "annotated.click"

@@ -1,6 +1,7 @@
 -- Purchased unlock keys. Accounts themselves live in Supabase Auth.
--- Run this in the Supabase SQL editor for the annotated project.
+-- Fresh projects should run supabase/migrations instead of this file.
 -- The license server writes with the service role. Buyers can read their own rows.
+-- max_devices null means unlimited (Dodo). AppSumo rows set it to 1.
 
 create table if not exists public.license_orders (
   order_id text primary key,
@@ -9,8 +10,11 @@ create table if not exists public.license_orders (
   claimed boolean not null default false,
   customer_id text not null default '',
   issued bigint not null,
+  max_devices integer,
   created_at timestamptz not null default now()
 );
+
+alter table public.license_orders add column if not exists max_devices integer;
 
 create index if not exists license_orders_email_idx on public.license_orders (email);
 

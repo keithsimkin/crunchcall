@@ -1,0 +1,5 @@
+# Copy to .dev.vars for `wrangler dev`. Do not commit .dev.vars.
+# ANNOTATED_LICENSE_PRIVATE_KEY is the PKCS8 Ed25519 PEM that matches electron/license-public.pem.
+ANNOTATED_LICENSE_PRIVATE_KEY=
+SUPABASE_URL=https://nnanwekmhkxcwxrbhtld.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=

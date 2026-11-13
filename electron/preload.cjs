@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('crunchcall', {
   openExternal: (url) => ipcRenderer.invoke('shell:open', String(url || '')),
   licenseStatus: () => ipcRenderer.invoke('license:status'),
   activateLicense: (token) => ipcRenderer.invoke('license:activate', String(token || '')),
+  deactivateLicense: () => ipcRenderer.invoke('license:deactivate'),
   clearLicense: () => ipcRenderer.invoke('license:clear'),
   buyLicense: () => ipcRenderer.invoke('license:buy'),
   openAccount: () => ipcRenderer.invoke('license:account'),
