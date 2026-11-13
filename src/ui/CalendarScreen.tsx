@@ -4,7 +4,26 @@ import { formatSynced, formatWhen } from '../features/calendar/format'
 import { calendarEmptyHint, calendarLinkHelp } from '../features/calendar/connectCopy'
 import { connectUrl, importCalendarText, setAskToStart, setCalendarError, setEnabled } from '../features/calendar/store'
 import { AccountConnect } from './AccountConnect'
+import { ExternalLinkIcon } from './icons'
 import { useCalendarClock, useCalendarSignIn } from './useCalendar'
+
+const CALENDAR_HELP = [
+  {
+    id: 'google',
+    name: 'Google Calendar',
+    href: 'https://calendar.google.com/calendar/u/0/r/settings/calendar',
+  },
+  {
+    id: 'outlook',
+    name: 'Outlook',
+    href: 'https://outlook.live.com/calendar/0/options/calendar/SharedCalendars',
+  },
+  {
+    id: 'apple',
+    name: 'Apple Calendar',
+    href: 'https://support.apple.com/guide/calendar/share-a-calendar-icl1031/mac',
+  },
+] as const
 
 export function CalendarScreen({ onStart }: { onStart: (event: CalendarEvent) => void }) {
   const { calendar, upcoming, now } = useCalendarClock()
@@ -95,6 +114,47 @@ export function CalendarScreen({ onStart }: { onStart: (event: CalendarEvent) =>
         <div className="cal-block">
           <p className="set-label">{desktop ? 'Apple, Outlook, or another calendar' : 'Calendar link'}</p>
           <p className="help">{calendarLinkHelp(desktop)}</p>
+          <p className="cal-find">
+            <span>Get it from</span>
+            {CALENDAR_HELP.map((item) => (
+              <a
+                key={item.id}
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(event) => {
+                  // Desktop: always open in the OS browser. preventDefault so Electron
+                  // does not swallow target=_blank when the main process is stale.
+                  if (!window.crunchcall) return
+                  event.preventDefault()
+                  const help = window.crunchcall.openCalendarHelp
+                  if (help) {
+                    void help(item.id)
+                    return
+                  }
+                  void window.crunchcall.openExternal?.(item.href)
+                }}
+              >
+                {item.name}
+                <ExternalLinkIcon />
+              </a>
+            ))}
+          </p>
+          <details className="cal-steps">
+            <summary>Show the exact steps</summary>
+            <ol>
+              <li>
+                <strong>Google Calendar</strong> → Settings → pick the calendar → Secret address in iCal format.
+              </li>
+              <li>
+                <strong>Outlook</strong> → Settings → Calendar → Shared calendars → Publish a calendar, then copy the ICS
+                link.
+              </li>
+              <li>
+                <strong>Apple Calendar</strong> → Share Calendar → Public Calendar, then copy the webcal link.
+              </li>
+            </ol>
+          </details>
           <label className="field">
             <span className="sr">Calendar link</span>
             <input

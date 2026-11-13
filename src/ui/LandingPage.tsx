@@ -70,6 +70,37 @@ function Check() {
   )
 }
 
+function CompareMark({ yes, us }: { yes: boolean; us?: boolean }) {
+  return (
+    <td className={us ? 'is-us' : undefined}>
+      <span className={yes ? 'lp-mark is-yes' : 'lp-mark is-no'} aria-label={yes ? 'Yes' : 'No'}>
+        {yes ? (
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <path
+              d="M4.2 9.2 7.3 12.2 13.8 5.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ) : (
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <path
+              d="M5.2 5.2 12.8 12.8M12.8 5.2 5.2 12.8"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
+        )}
+      </span>
+    </td>
+  )
+}
+
 const plans: {
   id: string
   name: string
@@ -247,7 +278,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                 go('product')
               }}
             >
-              Coaching, notes & Ask
+              Features
             </a>
             <a
               href="#pricing"
@@ -378,10 +409,10 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                   Quiet mid-call cues for a missing date, stacked questions, and talk ratio — while you can still do
                   something about it. Hidden from screen share.
                 </p>
-                <div className="lp-shot">
+                <div className="lp-shot lp-shot-zoom">
                   <img
-                    src="/landing/shot-live-call.png?v=light"
-                    alt="Live Product sync in annotated: the transcript, a paused timer, and the cues panel."
+                    src="/landing/shot-coaching-focus.png?v=desk"
+                    alt="Live call cues panel beside the transcript: mid-call coaching that stays off screen share."
                   />
                 </div>
               </article>
@@ -392,9 +423,9 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                   Summary, owners, and due dates, searchable on this PC. Export Markdown when you want to share the
                   notes, not the whole transcript.
                 </p>
-                <div className="lp-shot">
+                <div className="lp-shot lp-shot-zoom">
                   <img
-                    src="/landing/shot-notes.png?v=light"
+                    src="/landing/shot-notes-focus.png?v=desk"
                     alt="Notes for Pricing review with Northwind: summary, takeaways, and next steps with owners and due dates."
                   />
                 </div>
@@ -422,23 +453,11 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                   <li>What is coming up this week?</li>
                 </ul>
               </div>
-              <div className="lp-ask-mock" aria-hidden="true">
-                <div className="lp-ask-panel">
-                  <header className="lp-ask-head">
-                    <span>Ask</span>
-                    <em>From your notes</em>
-                  </header>
-                  <div className="lp-ask-thread">
-                    <p className="lp-ask-user">Who owns the open next steps?</p>
-                    <p className="lp-ask-reply">
-                      <strong>Sam</strong> owns the Lumen checklist (Tue). <strong>Rae</strong> walks their admin
-                      through settings before the 24th.
-                    </p>
-                  </div>
-                  <div className="lp-ask-bar">
-                    <span>Ask about your notes…</span>
-                  </div>
-                </div>
+              <div className="lp-shot lp-shot-ask">
+                <img
+                  src="/landing/shot-ask.png?v=desk"
+                  alt="Ask open in annotated: tag people, projects, skills, or meetings, then ask from notes on this PC."
+                />
               </div>
             </article>
           </div>
@@ -486,31 +505,31 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
               <tbody>
                 <tr>
                   <th scope="row">Bot in the meeting</th>
-                  <td className="is-us">No</td>
-                  <td>No</td>
+                  <CompareMark us yes={false} />
+                  <CompareMark yes={false} />
                   <td>Often</td>
                   <td>Often</td>
                   <td>Often</td>
                 </tr>
                 <tr>
                   <th scope="row">Audio stays on this PC</th>
-                  <td className="is-us">Yes</td>
-                  <td>No</td>
-                  <td>No</td>
-                  <td>No</td>
-                  <td>No</td>
+                  <CompareMark us yes />
+                  <CompareMark yes={false} />
+                  <CompareMark yes={false} />
+                  <CompareMark yes={false} />
+                  <CompareMark yes={false} />
                 </tr>
                 <tr>
                   <th scope="row">Coaching while the call is open</th>
-                  <td className="is-us">Yes</td>
-                  <td>No</td>
-                  <td>No</td>
-                  <td>No</td>
-                  <td>No</td>
+                  <CompareMark us yes />
+                  <CompareMark yes={false} />
+                  <CompareMark yes={false} />
+                  <CompareMark yes={false} />
+                  <CompareMark yes={false} />
                 </tr>
                 <tr>
                   <th scope="row">Ask across notes on this PC</th>
-                  <td className="is-us">Yes</td>
+                  <CompareMark us yes />
                   <td>Cloud chat</td>
                   <td>Cloud chat</td>
                   <td>Cloud chat</td>
@@ -518,11 +537,11 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                 </tr>
                 <tr>
                   <th scope="row">Account required</th>
-                  <td className="is-us">No</td>
-                  <td>Yes</td>
-                  <td>Yes</td>
-                  <td>Yes</td>
-                  <td>Yes</td>
+                  <CompareMark us yes={false} />
+                  <CompareMark yes />
+                  <CompareMark yes />
+                  <CompareMark yes />
+                  <CompareMark yes />
                 </tr>
                 <tr>
                   <th scope="row">How you pay</th>

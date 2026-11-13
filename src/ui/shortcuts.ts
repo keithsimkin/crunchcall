@@ -48,7 +48,7 @@ export const shortcutCatalog: ShortcutDef[] = [
   { id: 'settings.listening', label: 'Listening', help: 'Mic, speech engine, and live cues', group: 'settings' },
   { id: 'settings.speech', label: 'Speech', help: 'Dictation and call speech models, downloads, and keys', group: 'settings' },
   { id: 'settings.notes', label: 'Notes', help: 'Writers, coaching, downloads, and cloud keys', group: 'settings' },
-  { id: 'settings.machine', label: 'This PC', help: 'Theme, setup, restore, and local paths', group: 'settings' },
+  { id: 'settings.machine', label: 'System', help: 'Theme, setup, restore, and local paths', group: 'settings' },
   {
     id: 'dictate.global',
     label: 'Dictate anywhere',
@@ -246,8 +246,11 @@ export function toElectronAccelerator(chord: ShortcutChord): string {
 }
 
 function processPlatform(): string {
-  const host = globalThis as { process?: { platform?: string } }
-  return host.process?.platform || 'win32'
+  // Renderer has no Node `process`; sniff the UA so shortcut labels stay correct.
+  if (typeof navigator === 'undefined') return 'win32'
+  if (/Mac|iPhone|iPad/i.test(navigator.userAgent)) return 'darwin'
+  if (/Linux/i.test(navigator.userAgent) && !/Android/i.test(navigator.userAgent)) return 'linux'
+  return 'win32'
 }
 
 export function shortcutLabel(id: ShortcutId): string {

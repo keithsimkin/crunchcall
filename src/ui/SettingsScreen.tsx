@@ -58,7 +58,7 @@ const pages: Record<SettingsSection, { title: string; lede: string }> = {
     lede: 'What writes the notes and phrases the cues. Download or paste a key on the same screen.',
   },
   machine: {
-    title: 'This PC',
+    title: 'System',
     lede: 'Name, appearance, and startup for this copy.',
   },
   license: {
@@ -91,7 +91,6 @@ export function SettingsDialog({
   license: LicenseDesk
 }) {
   const sheetRef = useRef<HTMLDivElement>(null)
-  const searchRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [restoreArmed, setRestoreArmed] = useState(false)
   const needle = query.trim().toLowerCase()
@@ -124,10 +123,6 @@ export function SettingsDialog({
     }
     if (item.href) window.open(item.href, '_blank', 'noopener,noreferrer')
   }
-
-  useEffect(() => {
-    searchRef.current?.focus()
-  }, [])
 
   useEffect(() => {
     const node = sheetRef.current
@@ -183,7 +178,6 @@ export function SettingsDialog({
             <SearchIcon />
             <span className="sr">Search settings</span>
             <input
-              ref={searchRef}
               value={query}
               onChange={(event) => onQuery(event.target.value)}
               placeholder="Search settings"

@@ -116,6 +116,7 @@ declare global {
       openAtLogin?: () => Promise<boolean>
       setOpenAtLogin?: (on: boolean) => Promise<void>
       openExternal?: (url: string) => Promise<void>
+      openCalendarHelp?: (provider: 'google' | 'outlook' | 'apple') => Promise<void>
       licenseStatus?: () => Promise<LicenseStatus>
       activateLicense?: (token: string) => Promise<LicenseActivateResult>
       clearLicense?: () => Promise<LicenseStatus>

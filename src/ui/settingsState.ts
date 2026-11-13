@@ -18,6 +18,13 @@ export type SettingsSection = 'listening' | 'speech' | 'notes' | 'machine' | 'li
 
 export const settingsItems: { id: SettingsSection; label: string; hint: string; icon: typeof ListenIcon; find: string }[] = [
   {
+    id: 'machine',
+    label: 'System',
+    hint: 'Name, theme, startup',
+    icon: PcIcon,
+    find: 'pc path folder version login local models windows startup appearance theme light dark system onboarding setup name restore defaults reset',
+  },
+  {
     id: 'listening',
     label: 'Listening',
     hint: 'Mic, language, cues',
@@ -37,13 +44,6 @@ export const settingsItems: { id: SettingsSection; label: string; hint: string; 
     hint: 'Writers, coaching, keys',
     icon: MeetingsIcon,
     find: 'notes writer qwen llama model download coach coaching gemini claude openai anthropic api key credential secret cloud local',
-  },
-  {
-    id: 'machine',
-    label: 'This PC',
-    hint: 'Name, theme, startup',
-    icon: PcIcon,
-    find: 'pc path folder version login local models windows startup appearance theme light dark system onboarding setup name restore defaults reset',
   },
   {
     id: 'license',
