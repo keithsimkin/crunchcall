@@ -34,7 +34,7 @@ test('the worker verifier rejects a flipped signature', async () => {
   const keys = pemPair()
   const token = await issueLicenseToken(keys.privateKey, FIELDS)
   const [prefix, payload, signature] = token.split('.')
-  const flipped = `${signature.slice(0, -1)}${signature.endsWith('a') ? 'b' : 'a'}`
+  const flipped = `${signature[0] === 'A' ? 'B' : 'A'}${signature.slice(1)}`
   const verified = await verifyLicenseToken(keys.privateKey, `${prefix}.${payload}.${flipped}`, NOW)
   expect(verified.ok).toBe(false)
   if (!verified.ok) expect(verified.reason).toBe('signature')
