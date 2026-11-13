@@ -31,12 +31,6 @@ async function mcp(method, params, withId = true) {
   }
   return JSON.parse(text)
 }
-async function tool(name, args={}) {
-  const r = await mcp('tools/call', { name, arguments: args })
-  if (r.error) return r
-  const t = r.result?.content?.[0]?.text
-  try { return JSON.parse(t) } catch { return r.result }
-}
 await mcp('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'meatola-agent', version: '1.0.0' } })
 await mcp('notifications/initialized', {}, false)
 const tools = await mcp('tools/list', {})

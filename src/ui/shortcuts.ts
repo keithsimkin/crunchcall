@@ -100,7 +100,7 @@ function normalizeKey(raw: string): string {
   if (key === 'control' || key === 'ctrl' || key === 'shift' || key === 'alt' || key === 'meta' || key === 'os') {
     return ''
   }
-  return key.length === 1 || key.length > 1 ? key : ''
+  return key
 }
 
 export function normalizeChord(value: unknown): ShortcutChord | null {
@@ -246,11 +246,8 @@ export function toElectronAccelerator(chord: ShortcutChord): string {
 }
 
 function processPlatform(): string {
-  try {
-    return typeof process !== 'undefined' && process.platform ? process.platform : 'win32'
-  } catch {
-    return 'win32'
-  }
+  const host = globalThis as { process?: { platform?: string } }
+  return host.process?.platform || 'win32'
 }
 
 export function shortcutLabel(id: ShortcutId): string {

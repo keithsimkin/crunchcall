@@ -2,8 +2,10 @@ import { useEffect, useId, useRef, useState, type ChangeEvent, type RefObject } 
 import type { CalendarEvent } from '../features/calendar/ics'
 import type { CalendarState } from '../features/calendar/store'
 import { connectUrl, importCalendarText, setAskToStart, setCalendarError, getState } from '../features/calendar/store'
+import { calendarIntro } from '../features/calendar/connectCopy'
 import { AccountConnect } from './AccountConnect'
 import { formatWhen } from '../features/calendar/format'
+import { useCalendarSignIn } from './useCalendar'
 import { LogoMark } from './icons'
 import {
   givenName,
@@ -391,6 +393,7 @@ function StepBody({
   const hello = trimmed ? `You're set, ${givenName(trimmed)}.` : "You're set."
   const next = upcoming[0]
   const client = mcpClientById(clientId)
+  const { signIn } = useCalendarSignIn()
 
   if (step === 'name') {
     return (
@@ -427,14 +430,10 @@ function StepBody({
     return (
       <div className="ob-body">
         <h2 id={titleId}>Sync the next two weeks</h2>
-        <p className="ob-lede">
-          {desktop
-            ? 'Sign in with Google or Outlook, or paste a private link from Apple. annotated reads the meetings on this PC and asks before it turns on.'
-            : 'Paste a private calendar link, or import a file. A webcal link is fine. Google and Outlook sign-in is in the desktop app.'}
-        </p>
+        <p className="ob-lede">{calendarIntro(desktop, signIn)}</p>
         <AccountConnect plain />
         <label className="field ob-field">
-          <span>{desktop ? 'Apple or another calendar' : 'Calendar link'}</span>
+          <span>{desktop ? 'Apple, Outlook, or another calendar' : 'Calendar link'}</span>
           <input
             ref={urlRef}
             value={url}
