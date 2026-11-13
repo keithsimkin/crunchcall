@@ -4,9 +4,9 @@ import { meetingsCalendarEmpty } from './features/calendar/connectCopy'
 import { dismiss, onCalendarStart, resetCalendar, setActiveMeeting } from './features/calendar/store'
 import { clearDeskStorage } from './lib/storage'
 import { setIndexedNotes } from './features/desk/notesIndex'
-import { disableDemoSeed, demoForced } from './features/desk/demoSeed'
+import { demoForced, disableDemoSeed, seedDemoData } from './features/desk/demoSeed'
 import { deleteMeeting, loadDesk, saveFolders } from './features/desk/store'
-import type { MeetingRow, ProjectAccent, ProjectFolder } from './ui/fixtures'
+import { demoAsk, type MeetingRow, type ProjectAccent, type ProjectFolder } from './ui/fixtures'
 import { CalendarIcon, DownloadIcon, ExternalLinkIcon, FolderIcon, GearIcon, HomeIcon, LiveIcon, LogoMark, MicIcon, PlugIcon, ShortcutIcon } from './ui/icons'
 import { emptyProfile, profileInitials, readProfile, writeProfile, type Profile } from './ui/profile'
 import { useSettingsState, type SettingsSection } from './ui/settingsState'
@@ -81,8 +81,12 @@ export default function App() {
   const { calendar, upcoming, due, now } = useCalendarClock()
   const { desktop: calendarDesktop, signIn: calendarSignIn } = useCalendarSignIn()
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null)
-  const [profile, setProfile] = useState(readProfile)
+  const [profile, setProfile] = useState(() => {
+    if (demoForced()) seedDemoData({ force: true })
+    return readProfile()
+  })
   const [setupOpen, setSetupOpen] = useState(() => !readProfile().onboarded)
+  const [showAsk, setShowAsk] = useState(false)
   const [searchNonce, setSearchNonce] = useState(0)
   const [dictateOpen, setDictateOpen] = useState(false)
   const [noteJump, setNoteJump] = useState<{ meetingId: string; utteranceId?: string; nonce: number } | null>(null)
@@ -246,6 +250,85 @@ export default function App() {
   useEffect(() => {
     setIndexedNotes(notesById)
   }, [notesById])
+
+  useEffect(() => {
+    if (deskReady) document.documentElement.dataset.desk = 'ready'
+  }, [deskReady])
+
+  useEffect(() => {
+    const screen = showAsk
+      ? 'ask'
+      : settingsOpen
+        ? 'settings'
+        : view.name === 'list'
+          ? 'home'
+          : view.name === 'notes'
+            ? 'notes'
+            : view.name
+    document.documentElement.dataset.screen = screen
+  }, [showAsk, settingsOpen, view])
+
+  useEffect(() => {
+    if (!demoForced()) return
+    const go = (target: string) =>
+      new Promise<boolean>((resolve) => {
+        setMarketing(false)
+        setSetupOpen(false)
+        setDictateOpen(false)
+        if (target === 'ask') {
+          setSettingsOpen(null)
+          setShowAsk(true)
+          setView({ name: 'notes', id: 'pricing' })
+        } else if (target === 'settings') {
+          setShowAsk(false)
+          setView({ name: 'list' })
+          setSettingsOpen('license')
+        } else {
+          setShowAsk(false)
+          setSettingsOpen(null)
+          if (target === 'home') setView({ name: 'list' })
+          else if (target === 'notes') setView({ name: 'notes', id: 'pricing' })
+          else if (target === 'live') setView({ name: 'live', fresh: false, title: 'Product sync', meetingId: 'live-product' })
+          else if (target === 'dictate') setView({ name: 'dictate' })
+          else if (target === 'calendar') setView({ name: 'calendar' })
+          else if (target === 'projects') setView({ name: 'projects' })
+          else if (target === 'shortcuts') setView({ name: 'shortcuts' })
+          else if (target === 'connect') setView({ name: 'connect' })
+        }
+        const started = Date.now()
+        const tick = () => {
+          const root = document.documentElement
+          const screen = root.dataset.screen
+          const ready = root.dataset.desk === 'ready' && screen === target
+          const text = document.body?.textContent ?? ''
+          const painted =
+            (target !== 'live' || text.includes('Missing date')) &&
+            (target !== 'notes' || text.includes('three-tier deck')) &&
+            (target !== 'ask' || text.includes('private option')) &&
+            (target !== 'settings' || text.includes('fieldnote.example')) &&
+            (target !== 'home' || text.includes('Northwind')) &&
+            (target !== 'calendar' || text.includes('Northwind')) &&
+            (target !== 'dictate' || text.includes('Maya')) &&
+            (target !== 'projects' || text.includes('six-week pilot')) &&
+            (target !== 'shortcuts' || text.includes('system-wide dictation')) &&
+            (target !== 'connect' || text.includes('Let Claude, Cursor, ChatGPT'))
+          if (ready && painted) {
+            window.setTimeout(() => resolve(true), 240)
+            return
+          }
+          if (Date.now() - started > 8000) {
+            resolve(false)
+            return
+          }
+          window.requestAnimationFrame(tick)
+        }
+        window.requestAnimationFrame(tick)
+      })
+    window.__annotatedCapture = go
+    return () => {
+      delete window.__annotatedCapture
+    }
+  }, [])
 
   useEffect(() => {
     if (!deskReady) return
@@ -755,6 +838,7 @@ export default function App() {
           hasWriterKey={Boolean(settings.savedKeys[settings.writerId])}
           userName={person}
           hidden={settingsOpen !== null}
+          demo={showAsk ? demoAsk : null}
           onOpenSettings={setSettingsOpen}
           onOpenMeeting={openFromAsk}
         />

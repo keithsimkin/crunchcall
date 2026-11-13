@@ -68,13 +68,20 @@ export function LiveScreen({
   onBack,
   onFinished,
 }: LiveScreenProps) {
-  const [armed, setArmed] = useState(autoStart)
+  const demoPlayback = meetingId === 'live-product'
+  const [armed, setArmed] = useState(autoStart || demoPlayback)
   const [lines, setLines] = useState<LiveLine[]>([])
-  const [device, setDevice] = useState(autoStart ? 'Starting…' : 'Not listening')
+  const [device, setDevice] = useState(demoPlayback ? productLive.device : autoStart ? 'Starting…' : 'Not listening')
   const [status, setStatus] = useState(
-    autoStart ? 'Starting the meeting…' : meetingId ? 'Paused.' : 'Press Start when you want annotated to listen.',
+    demoPlayback
+      ? 'Listening to system audio.'
+      : autoStart
+        ? 'Starting the meeting…'
+        : meetingId
+          ? 'Paused.'
+          : 'Press Start when you want annotated to listen.',
   )
-  const [elapsed, setElapsed] = useState('0:00')
+  const [elapsed, setElapsed] = useState(demoPlayback ? productLive.elapsed : '0:00')
   const [mic, setMic] = useState(false)
   const [mics, setMics] = useState<MicOption[]>([{ id: 'default', name: 'Default' }])
   const [overlayOn, setOverlayOn] = useState(showCues)
@@ -124,6 +131,7 @@ export function LiveScreen({
   }, [])
 
   useEffect(() => {
+    if (meetingId === 'live-product') return
     if (!armed && !meetingId) return
     const timer = window.setInterval(() => {
       const seconds = Math.max(0, Math.round((Date.now() - startedAt.current) / 1000))
@@ -158,7 +166,12 @@ export function LiveScreen({
             }
           }
         }
-        setStatus(armed ? 'Listening…' : 'Paused.')
+        if (meeting.id === 'live-product') {
+          setStatus('Listening to system audio.')
+          setElapsed(productLive.elapsed)
+        } else {
+          setStatus(armed ? 'Listening…' : 'Paused.')
+        }
       } catch (error) {
         if (!stopped) setStatus(error instanceof Error ? error.message : 'Could not start the meeting.')
       }
@@ -171,6 +184,12 @@ export function LiveScreen({
 
   useEffect(() => {
     if (!armed || !sessionId) return
+    if (meetingId === 'live-product') {
+      setDevice(productLive.device)
+      setStatus('Listening to system audio.')
+      setElapsed(productLive.elapsed)
+      return
+    }
     let cancelled = false
     ;(async () => {
       listenRef.current?.stop()
@@ -199,7 +218,7 @@ export function LiveScreen({
       listenRef.current?.stop()
       listenRef.current = null
     }
-  }, [armed, mic, inputDevice, sessionId])
+  }, [armed, mic, inputDevice, sessionId, meetingId])
 
   useEffect(() => {
     const tick = window.setInterval(() => {

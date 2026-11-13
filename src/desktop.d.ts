@@ -76,6 +76,7 @@ export type OverlayAction = 'open' | 'end' | 'pause' | 'resume' | 'dismiss'
 declare global {
   const __CRUNCHCALL_VERSION__: string
   interface Window {
+    __annotatedCapture?: (target: string) => Promise<boolean>
     crunchcall?: {
       fetchCalendar: (url: string) => Promise<CalendarFetchResult>
       calendarSignIn: () => Promise<CalendarSignIn>

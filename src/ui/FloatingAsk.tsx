@@ -34,6 +34,7 @@ type FloatingAskProps = {
   hasWriterKey: boolean
   userName: string
   hidden?: boolean
+  demo?: { question: string; answer: string; label: string; pulls: AskPull[] } | null
   onOpenSettings: (section: SettingsSection) => void
   onOpenMeeting: (meetingId: string, utteranceId?: string) => void
 }
@@ -259,6 +260,7 @@ export function FloatingAsk({
   hasWriterKey,
   userName,
   hidden = false,
+  demo = null,
   onOpenSettings,
   onOpenMeeting,
 }: FloatingAskProps) {
@@ -281,7 +283,21 @@ export function FloatingAsk({
   const [pickerQuery, setPickerQuery] = useState('')
   const [copied, setCopied] = useState(false)
   const [pinnedFocusId, setPinnedFocusId] = useState<string | null>(null)
+  const [demoKey, setDemoKey] = useState('')
   const pendingCaret = useRef<number | null>(null)
+  if (demo && demo.question !== demoKey) {
+    setDemoKey(demo.question)
+    setOpen(true)
+    setMessages([
+      { id: 'demo-question', role: 'user', text: demo.question, contextLabel: demo.label },
+      { id: 'demo-answer', role: 'assistant', text: demo.answer, pulls: demo.pulls },
+    ])
+  } else if (!demo && demoKey) {
+    setDemoKey('')
+    setOpen(false)
+    setMessages([])
+  }
+
   const focusMeetingId = focus.page === 'notes' ? focus.meetingId : null
   if (focusMeetingId && focusMeetingId !== pinnedFocusId) {
     setPinnedFocusId(focusMeetingId)
