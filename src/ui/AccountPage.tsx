@@ -135,12 +135,22 @@ export function AccountPage() {
       <h1>Your annotated.</h1>
       <p className="site-lead">One purchase is one Windows PC. Each AppSumo code is another.</p>
 
+      <section className="lp-feature-card site-card site-download">
+        <div>
+          <h2>Windows</h2>
+          <p>The signed installer. Notes stay on that PC.</p>
+        </div>
+        <a className="lp-btn lp-btn-dark" href={WINDOWS_INSTALLER_URL}>
+          Download annotated for Windows
+        </a>
+      </section>
+
       {!signedIn ? (
         <section className="lp-feature-card site-card">
           {sent ? (
             <>
               <h2>Check your email.</h2>
-              <p>The sign-in link opens this page with your keys.</p>
+              <p>The sign-in link opens this account page with your keys.</p>
             </>
           ) : (
             <form
@@ -149,8 +159,8 @@ export function AccountPage() {
                 void sendLink()
               }}
             >
-              <h2>Sign in to buy.</h2>
-              <p>We email a link. There is no password.</p>
+              <h2>Sign in to your account.</h2>
+              <p>We email a link back to this page. There is no password.</p>
               <label htmlFor="account-email">Email</label>
               <input
                 id="account-email"
@@ -173,15 +183,6 @@ export function AccountPage() {
         </section>
       ) : (
         <>
-          <section className="lp-feature-card site-card site-download">
-            <div>
-              <h2>Windows</h2>
-              <p>The signed installer. Notes stay on that PC.</p>
-            </div>
-            <a className="lp-btn lp-btn-dark" href={WINDOWS_INSTALLER_URL}>
-              Download annotated for Windows
-            </a>
-          </section>
           {orders === null ? <p className="site-note">Loading your licenses…</p> : null}
           {orders && orders.length === 0 ? (
             <section className="lp-feature-card site-card">
