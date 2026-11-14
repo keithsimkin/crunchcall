@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { readMcpPolicy, saveMcpPolicy } from '../features/desk/store'
 import { PlugIcon, SparkIcon } from './icons'
+import { publicAsset } from './publicAsset'
 
 type ClientId = 'claude' | 'gemini' | 'cursor' | 'chatgpt' | 'any'
 
@@ -28,7 +29,7 @@ const clients: Client[] = [
   {
     id: 'claude',
     name: 'Claude Desktop',
-    mark: '/logos/claude.svg',
+    mark: publicAsset('logos/claude.svg'),
     status: 'Ready',
     detail: 'Points at the notes database on this PC.',
     setup: 'Claude → Settings → Developer → Edit Config',
@@ -38,7 +39,7 @@ const clients: Client[] = [
   {
     id: 'gemini',
     name: 'Gemini',
-    mark: '/logos/gemini.svg',
+    mark: publicAsset('logos/gemini.svg'),
     status: 'Ready',
     detail: 'Add the same local server in Gemini CLI.',
     setup: 'settings.json in your user folder (.gemini) → mcpServers',
@@ -48,7 +49,7 @@ const clients: Client[] = [
   {
     id: 'cursor',
     name: 'Cursor',
-    mark: '/logos/cursor.svg',
+    mark: publicAsset('logos/cursor.svg'),
     status: 'Ready',
     detail: 'Add the server to Cursor’s MCP settings.',
     setup: 'Cursor → Settings → MCP → Add server',
@@ -58,7 +59,7 @@ const clients: Client[] = [
   {
     id: 'chatgpt',
     name: 'ChatGPT Desktop',
-    mark: '/logos/openai.svg',
+    mark: publicAsset('logos/openai.svg'),
     status: 'Ready',
     detail: 'Connect the local server as a developer tool.',
     setup: 'Settings → Connectors → Add MCP server',

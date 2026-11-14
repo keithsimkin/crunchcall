@@ -28,9 +28,17 @@ function candidatePaths() {
   }
   const fromEnv = typeof process.env.CRUNCHCALL_ENGINE === 'string' ? process.env.CRUNCHCALL_ENGINE.trim() : ''
   if (fromEnv) push(path.resolve(fromEnv))
+  // Packaged install: electron-builder extraResources land next to the app.
+  const resources = typeof process.resourcesPath === 'string' ? process.resourcesPath : ''
+  if (resources) {
+    for (const name of names) {
+      push(path.join(resources, name))
+      push(path.join(resources, 'bin', name))
+    }
+  }
   for (const name of names) {
-    push(path.resolve(__dirname, '..', 'native', 'target', 'debug', name))
     push(path.resolve(__dirname, '..', 'native', 'target', 'release', name))
+    push(path.resolve(__dirname, '..', 'native', 'target', 'debug', name))
   }
   return paths
 }

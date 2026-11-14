@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
+import { publicAsset } from './publicAsset'
 
 const apps = [
-  { id: 'zoom', name: 'Zoom', src: '/logos/zoom-mark.svg' },
-  { id: 'meet', name: 'Google Meet', src: '/logos/meet.svg' },
-  { id: 'teams', name: 'Teams', src: '/logos/teams.svg' },
-  { id: 'webex', name: 'Webex', src: '/logos/webex.svg' },
-  { id: 'slack', name: 'Slack', src: '/logos/slack.svg' },
-  { id: 'discord', name: 'Discord', src: '/logos/discord.svg' },
+  { id: 'zoom', name: 'Zoom', src: publicAsset('logos/zoom-mark.svg') },
+  { id: 'meet', name: 'Google Meet', src: publicAsset('logos/meet.svg') },
+  { id: 'teams', name: 'Teams', src: publicAsset('logos/teams.svg') },
+  { id: 'webex', name: 'Webex', src: publicAsset('logos/webex.svg') },
+  { id: 'slack', name: 'Slack', src: publicAsset('logos/slack.svg') },
+  { id: 'discord', name: 'Discord', src: publicAsset('logos/discord.svg') },
 ] as const
 
 const step = 48
