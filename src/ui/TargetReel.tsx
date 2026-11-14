@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
+import { publicAsset } from './publicAsset'
 
 const targets = [
-  { id: 'chrome', name: 'Chrome', src: '/logos/chrome.svg' },
-  { id: 'cursor', name: 'Cursor', src: '/logos/cursor.png' },
-  { id: 'firefox', name: 'Firefox', src: '/logos/firefox.svg' },
-  { id: 'chatgpt', name: 'ChatGPT', src: '/logos/chatgpt.svg' },
-  { id: 'safari', name: 'Safari', src: '/logos/safari.svg' },
-  { id: 't3', name: 'T3', src: '/logos/t3.svg' },
-  { id: 'claude', name: 'Claude', src: '/logos/claude.svg' },
-  { id: 'vscode', name: 'VS Code', src: '/logos/vscode.svg' },
-  { id: 'gemini', name: 'Gemini', src: '/logos/gemini.svg' },
+  { id: 'chrome', name: 'Chrome', src: publicAsset('logos/chrome.svg') },
+  { id: 'cursor', name: 'Cursor', src: publicAsset('logos/cursor.png') },
+  { id: 'firefox', name: 'Firefox', src: publicAsset('logos/firefox.svg') },
+  { id: 'chatgpt', name: 'ChatGPT', src: publicAsset('logos/chatgpt.svg') },
+  { id: 'safari', name: 'Safari', src: publicAsset('logos/safari.svg') },
+  { id: 't3', name: 'T3', src: publicAsset('logos/t3.svg') },
+  { id: 'claude', name: 'Claude', src: publicAsset('logos/claude.svg') },
+  { id: 'vscode', name: 'VS Code', src: publicAsset('logos/vscode.svg') },
+  { id: 'gemini', name: 'Gemini', src: publicAsset('logos/gemini.svg') },
 ] as const
 
 const step = 48

@@ -1,3 +1,5 @@
+import { publicAsset } from './publicAsset'
+
 const PROFILE_KEY = 'crunchcall.profile'
 
 export type McpClientId = 'claude' | 'gemini' | 'cursor' | 'chatgpt'
@@ -29,25 +31,25 @@ export const mcpClients: McpClient[] = [
   {
     id: 'claude',
     name: 'Claude',
-    mark: '/logos/claude.svg',
+    mark: publicAsset('logos/claude.svg'),
     where: 'Claude → Settings → Developer → Edit Config. Merge the JSON, save, and restart Claude.',
   },
   {
     id: 'gemini',
     name: 'Gemini',
-    mark: '/logos/gemini.svg',
+    mark: publicAsset('logos/gemini.svg'),
     where: 'Gemini CLI → settings.json in your user folder (.gemini). Merge the JSON under mcpServers, then restart.',
   },
   {
     id: 'cursor',
     name: 'Cursor',
-    mark: '/logos/cursor.svg',
+    mark: publicAsset('logos/cursor.svg'),
     where: 'Cursor → Settings → MCP → Add server. Paste the JSON.',
   },
   {
     id: 'chatgpt',
     name: 'ChatGPT',
-    mark: '/logos/openai.svg',
+    mark: publicAsset('logos/openai.svg'),
     where: 'Settings → Connectors → Add MCP server. Name it annotated, command crunchcalld, arguments mcp --stdio.',
   },
 ]

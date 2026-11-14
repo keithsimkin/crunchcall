@@ -15,7 +15,7 @@
     "desktop": "bun scripts/desktop.mjs",
     "desktop:app": "electron .",
     "build": "tsc -b && vite build",
-    "desktop:pack": "bun run build && bun scripts/write-oauth-config.mjs && electron-builder --win",
+    "desktop:pack": "bun run build && bun scripts/stage-engine.mjs && bun scripts/write-oauth-config.mjs && electron-builder --win",
     "license:issue": "bun licensing/issue.mjs",
     "license:serve": "bun licensing/server.mjs",
     "appsumo:codes": "bun scripts/appsumo-generate-codes.mjs",

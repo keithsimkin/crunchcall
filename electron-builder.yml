@@ -12,6 +12,13 @@ files:
   - "!electron/oauth.local.json"
   - "!electron/**/*.test.mjs"
 asar: true
+# scripts/stage-engine.mjs copies crunchcalld into native/stage before pack.
+# An empty stage is fine; the sidecar then reports engine_missing until a binary is built.
+extraResources:
+  - from: native/stage
+    to: .
+    filter:
+      - '**/*'
 publish:
   provider: github
   owner: keithsimkin
@@ -20,6 +27,8 @@ win:
   # Multi-size ICO (16–256). Embedded into annotated.exe so the taskbar,
   # installer, and shortcuts never fall back to the Electron atom.
   icon: electron/icon.ico
+  # Stable GitHub Releases / annotated.click asset name (no spaces).
+  artifactName: ${productName}-Setup-${version}.${ext}
   # CSC_LINK and CSC_KEY_PASSWORD sign the installer. electron-updater then
   # rejects an update whose Authenticode publisher does not match this build.
   target:

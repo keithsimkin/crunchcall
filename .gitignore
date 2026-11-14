@@ -30,6 +30,7 @@ licensing/private.pem
 licensing/orders.json
 licensing/users.json
 native/target
+native/stage
 .crunchcall-data
 release
 
