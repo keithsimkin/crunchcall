@@ -2,6 +2,7 @@ import { createSupabaseCodes, normalizeCode, orderIdForCode, redeemCode } from '
 import { renderForm, renderSuccess, securityHeaders } from './page.mjs'
 import { createSupabaseSeats, normalizeDeviceId, normalizeLabel } from './seats.mjs'
 import { issueLicenseToken, normalizeEmail, verifyLicenseToken } from './sign.mjs'
+import { createSupabaseTrials } from './trials.mjs'
 
 const MESSAGES = {
   invalid: 'Enter the code from AppSumo and the email you want on this license.',
@@ -77,6 +78,12 @@ export function createDeps(env, overrides = {}) {
         url: env && env.SUPABASE_URL,
         serviceKey: env && env.SUPABASE_SERVICE_ROLE_KEY,
       }),
+    trials:
+      overrides.trials ||
+      createSupabaseTrials({
+        url: env && env.SUPABASE_URL,
+        serviceKey: env && env.SUPABASE_SERVICE_ROLE_KEY,
+      }),
     now: overrides.now || (() => Math.floor(Date.now() / 1000)),
   }
 }
@@ -129,6 +136,34 @@ async function redeem(request, env, deps) {
   return html(renderSuccess(result.license))
 }
 
+async function claimTrial(request, env, deps) {
+  const payload = await readPayload(request)
+  if (payload.error) return json({ ok: false, reason: 'malformed' }, 400)
+  const deviceId = normalizeDeviceId(payload.value && payload.value.deviceId)
+  if (!deviceId) return json({ ok: false, reason: 'device' }, 400)
+  let result
+  try {
+    result = await deps.trials.claim({ deviceId, now: deps.now() })
+  } catch {
+    log('trial', { ok: false, reason: 'unavailable' })
+    return json({ ok: false, reason: 'unavailable' }, 503)
+  }
+  if (!result || !result.ok) {
+    const reason = (result && result.reason) || 'unavailable'
+    log('trial', { ok: false, reason })
+    return json({ ok: false, reason }, reason === 'unavailable' ? 503 : 400)
+  }
+  log('trial', { ok: true, created: Boolean(result.created), active: Boolean(result.active) })
+  return json({
+    ok: true,
+    startedAt: result.startedAt,
+    endsAt: result.endsAt,
+    active: result.active === true,
+    daysLeft: result.daysLeft,
+    created: result.created === true,
+  })
+}
+
 async function changeSeat(request, env, deps, action) {
   const payload = await readPayload(request)
   if (payload.error) return json({ ok: false, reason: 'malformed' }, 400)
@@ -175,6 +210,10 @@ export async function handleRequest(request, env, overrides) {
   const path = redeemPath(request.url)
   if (path === '/redeem' && request.method === 'GET') return html(renderForm())
   const deps = createDeps(env, overrides)
+
+  if (path === '/api/license/trial' && request.method === 'POST') return claimTrial(request, env, deps)
+  if (path === '/api/license/trial') return json({ ok: false, reason: 'method' }, 405)
+
   if (!signingKey(env)) {
     log('config', { ok: false, reason: 'unavailable' })
     if (path === '/redeem' && request.method === 'POST') return html(renderForm({ error: MESSAGES.unavailable }), 503)

@@ -34,7 +34,7 @@ export type UpdateStatus = {
 export type LicenseAuthenticity = 'development' | 'genuine' | 'unsigned' | 'tampered' | 'untrusted' | 'unknown'
 
 export type LicenseStatus = {
-  tier: 'free' | 'unlock'
+  tier: 'free' | 'trial' | 'unlock'
   email: string
   order: string
   license: 'none' | 'valid' | 'invalid'
@@ -43,6 +43,8 @@ export type LicenseStatus = {
   detail: string
   seat?: 'open' | 'active' | 'inactive' | 'blocked'
   seatDetail?: string
+  trialEndsAt?: number
+  trialDaysLeft?: number
 }
 
 export type LicenseActivateResult = { ok: true; status: LicenseStatus } | { ok: false; message: string }

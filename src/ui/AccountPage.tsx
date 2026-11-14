@@ -109,7 +109,7 @@ export function AccountPage() {
             {orders.map((order) => (
               <article key={order.order}>
                 <label htmlFor={`key-${order.order}`}>{order.order.startsWith('appsumo_') ? 'AppSumo key' : 'Unlock key'}</label>
-                <textarea id={`key-${order.order}`} readOnly value={order.license} />
+                <textarea id={`key-${order.order}`} rows={2} readOnly value={order.license} />
                 <button type="button" className="ghost" onClick={() => void copy(order.license)}>
                   {copied === order.license ? 'Copied' : 'Copy key'}
                 </button>

@@ -5,6 +5,29 @@
   font: 16px/1.5 system-ui, sans-serif;
 }
 
+.legal-page main {
+  width: min(42rem, calc(100% - 32px));
+}
+
+.legal-page .fine a {
+  color: inherit;
+}
+
+.legal-page article h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.legal-page article p {
+  margin: 0 0 10px;
+  color: #3a3a36;
+}
+
+.legal-page article p:last-child {
+  margin-bottom: 0;
+}
+
 .account-page main {
   width: min(40rem, calc(100% - 32px));
   margin: 0 auto;
@@ -62,8 +85,11 @@
 }
 
 .account-page textarea {
-  min-height: 6.5rem;
+  min-height: 2.75rem;
+  max-height: 6rem;
+  resize: vertical;
   font: 12px/1.45 ui-monospace, Consolas, monospace;
+  field-sizing: content;
 }
 
 .account-page button,
