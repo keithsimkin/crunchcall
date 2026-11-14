@@ -23,18 +23,22 @@ export function LicensePrompt({
   const [token, setToken] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [phase, setPhase] = useState<'idle' | 'checking' | 'ok' | 'rejected'>('idle')
 
   async function activate() {
     const activateLicense = window.crunchcall?.activateLicense
     if (!activateLicense) return
     setBusy(true)
+    setPhase('checking')
     setError('')
     try {
       const result = await activateLicense(token.trim())
       if (!result.ok) {
+        setPhase('rejected')
         setError(result.message)
         return
       }
+      setPhase('ok')
       await refresh()
     } finally {
       setBusy(false)
@@ -61,12 +65,33 @@ export function LicensePrompt({
           spellCheck={false}
           autoComplete="off"
           value={token}
+          disabled={busy}
           placeholder="annotated1…"
-          onChange={(event) => setToken(event.target.value)}
+          onChange={(event) => {
+            setToken(event.target.value)
+            if (phase !== 'idle') {
+              setPhase('idle')
+              setError('')
+            }
+          }}
         />
-        {error ? <p className="pop-alert">{error}</p> : null}
+        {phase === 'checking' ? (
+          <p className="license-status is-checking" role="status" aria-live="polite">
+            Checking license…
+          </p>
+        ) : null}
+        {phase === 'ok' ? (
+          <p className="license-status is-ok" role="status" aria-live="polite">
+            License activated on this PC.
+          </p>
+        ) : null}
+        {phase === 'rejected' && error ? (
+          <p className="license-status is-rejected" role="alert">
+            {error}
+          </p>
+        ) : null}
         <button type="submit" className="btn primary" disabled={busy || !token.trim()}>
-          Activate
+          {busy && phase === 'checking' ? 'Checking…' : phase === 'ok' ? 'Activated' : 'Activate'}
         </button>
         <div className="license-links">
           <a

@@ -15,5 +15,22 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 5173,
+    proxy: {
+      '/api/account': {
+        target: 'https://nnanwekmhkxcwxrbhtld.supabase.co',
+        changeOrigin: true,
+        rewrite: (path) => `/functions/v1/billing${path}`,
+      },
+      '/api/checkout': {
+        target: 'https://nnanwekmhkxcwxrbhtld.supabase.co',
+        changeOrigin: true,
+        rewrite: (path) => `/functions/v1/billing${path}`,
+      },
+      '/api/auth/magic-link': {
+        target: 'https://nnanwekmhkxcwxrbhtld.supabase.co',
+        changeOrigin: true,
+        rewrite: () => `/functions/v1/billing/api/auth/magic-link`,
+      },
+    },
   },
 })

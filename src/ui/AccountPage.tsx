@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { WINDOWS_INSTALLER_URL } from './download'
-import { SiteKicker, SiteShell } from './SiteShell'
+import { SiteShell } from './SiteShell'
+import { SUPPORT_EMAIL } from './legalCopy'
 import {
   accountRequest,
   authConfig,
@@ -83,7 +84,8 @@ export function AccountPage() {
   async function sendLink() {
     setBusy(true)
     setNote('')
-    const result = await sendMagicLink(email.trim(), 'https://annotated.click/account')
+    const redirectTo = `${window.location.origin}/account`
+    const result = await sendMagicLink(email.trim(), redirectTo)
     setBusy(false)
     if (!result.ok) {
       setNote(result.reason === 'config' ? 'Sign-in is not set up on this site yet.' : 'The email could not be sent. Try again in a moment.')
@@ -129,112 +131,152 @@ export function AccountPage() {
   const dodo = (orders || []).filter((order) => !order.order.startsWith('appsumo_'))
   const codes = (orders || []).filter((order) => order.order.startsWith('appsumo_'))
 
-  return (
-    <SiteShell email={signedIn ? accountEmail || undefined : undefined} onSignOut={signedIn ? signOut : undefined}>
-      <SiteKicker>Account</SiteKicker>
-      <h1>Your annotated.</h1>
-      <p className="site-lead">One purchase is one Windows PC. Each AppSumo code is another.</p>
+  if (!signedIn) {
+    return (
+      <SiteShell tone="auth">
+        <div className="site-login">
+          <section className="site-pass">
+            {sent ? (
+              <>
+                <h1>Check your inbox</h1>
+                <p className="site-pass-lead">
+                  We emailed a sign-in link{email ? ` to ${email}` : ''}. Open it to land back here with your
+                  licenses.
+                </p>
+                <p className="site-pass-note is-ok">
+                  Sent from hello@annotated.click. If you do not see it in a minute, check your spam or junk
+                  folder.
+                </p>
+                <button
+                  type="button"
+                  className="site-pass-go"
+                  disabled={busy || !email.trim()}
+                  onClick={() => void sendLink()}
+                >
+                  {busy ? 'Sending…' : 'Send the email again'}
+                </button>
+                <p className="site-pass-help">
+                  Still nothing?{' '}
+                  <a href={`mailto:${SUPPORT_EMAIL}?subject=annotated%20sign-in%20help`}>Email us</a>
+                </p>
+              </>
+            ) : (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void sendLink()
+                }}
+              >
+                <h1>Account login</h1>
+                <p className="site-pass-lead">Hey — enter your email to sign in to your annotated account.</p>
+                <label htmlFor="account-email">Email</label>
+                <input
+                  id="account-email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  placeholder="you@company.com"
+                  value={email}
+                  disabled={busy}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+                <p className="site-pass-help">
+                  No password. Having trouble?{' '}
+                  <a href={`mailto:${SUPPORT_EMAIL}?subject=annotated%20sign-in%20help`}>Email us</a>
+                </p>
+                <button type="submit" className="site-pass-go" disabled={busy || !authConfig().ready}>
+                  {busy ? 'Sending…' : 'Sign in'}
+                </button>
+              </form>
+            )}
+            {note ? <p className="site-pass-note">{note}</p> : null}
+            {!authConfig().ready && !sent ? <p className="site-pass-note">Sign-in is not set up on this site yet.</p> : null}
+            <a className="site-pass-download" href={WINDOWS_INSTALLER_URL}>
+              Download annotated for Windows
+            </a>
+            <p className="site-pass-foot">
+              Don&apos;t have an account? <a href="/buy">Buy Unlock</a>
+            </p>
+          </section>
 
-      <section className="lp-feature-card site-card site-download">
-        <div>
+          <aside className="site-login-side" aria-hidden="true">
+            <div className="site-bubble" />
+            <div className="site-block" />
+          </aside>
+        </div>
+      </SiteShell>
+    )
+  }
+
+  return (
+    <SiteShell tone="desk" email={accountEmail || undefined} onSignOut={signOut}>
+      <div className="site-desk">
+        <header className="site-desk-head">
+          <h1>Your keys</h1>
+          <p>One purchase is one Windows PC. Each AppSumo code is another.</p>
+        </header>
+
+        <section className="site-desk-card">
           <h2>Windows</h2>
           <p>The signed installer. Notes stay on that PC.</p>
-        </div>
-        <a className="lp-btn lp-btn-dark" href={WINDOWS_INSTALLER_URL}>
-          Download annotated for Windows
-        </a>
-      </section>
-
-      {!signedIn ? (
-        <section className="lp-feature-card site-card">
-          {sent ? (
-            <>
-              <h2>Check your email.</h2>
-              <p>The sign-in link opens this account page with your keys.</p>
-            </>
-          ) : (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault()
-                void sendLink()
-              }}
-            >
-              <h2>Sign in to your account.</h2>
-              <p>We email a link back to this page. There is no password.</p>
-              <label htmlFor="account-email">Email</label>
-              <input
-                id="account-email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                disabled={busy}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-              <div className="site-actions">
-                <button type="submit" className="lp-btn lp-btn-dark" disabled={busy || !authConfig().ready}>
-                  {busy ? 'Sending…' : 'Email me a sign-in link'}
-                </button>
-              </div>
-            </form>
-          )}
-          {note ? <p className="site-note">{note}</p> : null}
-          {!authConfig().ready && !sent ? <p className="site-note">Sign-in is not set up on this site yet.</p> : null}
+          <div className="site-desk-actions">
+            <a className="is-primary" href={WINDOWS_INSTALLER_URL}>
+              Download annotated
+            </a>
+          </div>
         </section>
-      ) : (
-        <>
-          {orders === null ? <p className="site-note">Loading your licenses…</p> : null}
-          {orders && orders.length === 0 ? (
-            <section className="lp-feature-card site-card">
-              <h2>No license yet.</h2>
-              <p>Buy Unlock once, or redeem an AppSumo code.</p>
-              <div className="site-actions">
-                <a className="lp-btn lp-btn-dark" href="/buy">
-                  Buy Unlock
-                </a>
-                <a className="lp-btn lp-btn-ghost" href="/redeem">
-                  Redeem a code
-                </a>
-              </div>
-            </section>
-          ) : null}
-          {dodo.map((order) => (
-            <LicenseCard
-              key={order.order}
-              title="Unlock"
-              order={order}
-              activations={activations.filter((row) => row.order === order.order)}
-              revealed={Boolean(revealed[order.order])}
-              copied={copied === order.license}
-              onReveal={() => setRevealed((current) => ({ ...current, [order.order]: !current[order.order] }))}
-              onCopy={() => void copy(order.license)}
-              onDeactivate={(deviceId) => void deactivate(order.order, deviceId)}
-            />
-          ))}
-          {codes.map((order) => (
-            <LicenseCard
-              key={order.order}
-              title="AppSumo"
-              compact
-              order={order}
-              activations={activations.filter((row) => row.order === order.order)}
-              revealed={Boolean(revealed[order.order])}
-              copied={copied === order.license}
-              onReveal={() => setRevealed((current) => ({ ...current, [order.order]: !current[order.order] }))}
-              onCopy={() => void copy(order.license)}
-              onDeactivate={(deviceId) => void deactivate(order.order, deviceId)}
-            />
-          ))}
-          {note ? <p className="site-note">{note}</p> : null}
-        </>
-      )}
+
+        {orders === null ? <p className="site-desk-note">Loading your licenses…</p> : null}
+
+        {orders && orders.length === 0 ? (
+          <section className="site-desk-card">
+            <h2>No license yet</h2>
+            <p>Buy Unlock once, or redeem an AppSumo code.</p>
+            <div className="site-desk-actions">
+              <a className="is-primary" href="/buy">
+                Buy Unlock
+              </a>
+              <a className="is-quiet" href="/redeem">
+                Redeem a code
+              </a>
+            </div>
+          </section>
+        ) : null}
+
+        {dodo.map((order) => (
+          <LicenseCard
+            key={order.order}
+            title="Unlock"
+            order={order}
+            activations={activations.filter((row) => row.order === order.order)}
+            revealed={Boolean(revealed[order.order])}
+            copied={copied === order.license}
+            onReveal={() => setRevealed((current) => ({ ...current, [order.order]: !current[order.order] }))}
+            onCopy={() => void copy(order.license)}
+            onDeactivate={(deviceId) => void deactivate(order.order, deviceId)}
+          />
+        ))}
+        {codes.map((order) => (
+          <LicenseCard
+            key={order.order}
+            title="AppSumo"
+            order={order}
+            activations={activations.filter((row) => row.order === order.order)}
+            revealed={Boolean(revealed[order.order])}
+            copied={copied === order.license}
+            onReveal={() => setRevealed((current) => ({ ...current, [order.order]: !current[order.order] }))}
+            onCopy={() => void copy(order.license)}
+            onDeactivate={(deviceId) => void deactivate(order.order, deviceId)}
+          />
+        ))}
+        {note ? <p className="site-desk-note">{note}</p> : null}
+      </div>
     </SiteShell>
   )
 }
 
 function LicenseCard({
   title,
-  compact,
   order,
   activations,
   revealed,
@@ -244,7 +286,6 @@ function LicenseCard({
   onDeactivate,
 }: {
   title: string
-  compact?: boolean
   order: Order
   activations: Activation[]
   revealed: boolean
@@ -255,26 +296,26 @@ function LicenseCard({
 }) {
   const active = activations.length > 0
   return (
-    <section className={compact ? 'lp-feature-card site-card site-keycard is-code' : 'lp-feature-card site-card site-keycard'}>
+    <section className="site-desk-card">
       <h2>{title}</h2>
       <p>{order.maxDevices === 1 ? 'One Windows PC.' : 'On this account.'}</p>
       <label htmlFor={`key-${order.order}`}>License key</label>
       <textarea id={`key-${order.order}`} className="site-key" readOnly value={revealed ? order.license : maskKey(order.license)} />
-      <div className="site-meta">
-        <span>{active ? `Active on ${activations.length === 1 ? '1 PC' : `${activations.length} PCs`}` : 'Not active on a PC yet'}</span>
-      </div>
-      <div className="site-actions">
-        <button type="button" className="lp-btn lp-btn-dark" onClick={onCopy}>
+      <p className="site-desk-meta">
+        {active ? `Active on ${activations.length === 1 ? '1 PC' : `${activations.length} PCs`}` : 'Not active on a PC yet'}
+      </p>
+      <div className="site-desk-actions">
+        <button type="button" className="is-primary" onClick={onCopy}>
           {copied ? 'Copied' : 'Copy'}
         </button>
-        <button type="button" className="lp-btn lp-btn-ghost" onClick={onReveal}>
+        <button type="button" className="is-quiet" onClick={onReveal}>
           {revealed ? 'Hide' : 'Reveal'}
         </button>
       </div>
       {activations.map((row) => (
-        <div className="site-device" key={row.deviceId}>
+        <div className="site-desk-device" key={row.deviceId}>
           <span>{row.label || 'This PC'}</span>
-          <button type="button" className="lp-btn lp-btn-ghost" onClick={() => onDeactivate(row.deviceId)}>
+          <button type="button" className="is-quiet" onClick={() => onDeactivate(row.deviceId)}>
             Deactivate
           </button>
         </div>
