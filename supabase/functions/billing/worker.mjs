@@ -258,6 +258,7 @@ export async function handleBilling(request, env, overrides = {}) {
     const root = String(env.SUPABASE_URL || '').replace(/\/$/, '')
     const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || ''
     if (!root || !serviceKey) return json({ ok: false, reason: 'unavailable' }, 503)
+    // Top-level redirect_to (REST). Nested options.redirect_to is often ignored.
     const generated = await fetchImpl(`${root}/auth/v1/admin/generate_link`, {
       method: 'POST',
       headers: {
@@ -268,16 +269,52 @@ export async function handleBilling(request, env, overrides = {}) {
       body: JSON.stringify({
         type: 'magiclink',
         email,
-        options: { redirect_to: redirectTo },
+        redirect_to: redirectTo,
       }),
     })
     const payload = await generated.json().catch(() => null)
-    const actionLink =
-      payload && typeof payload.action_link === 'string'
-        ? payload.action_link
-        : payload && payload.properties && typeof payload.properties.action_link === 'string'
-          ? payload.properties.action_link
+    const hashedToken =
+      payload && typeof payload.hashed_token === 'string'
+        ? payload.hashed_token
+        : payload && payload.properties && typeof payload.properties.hashed_token === 'string'
+          ? payload.properties.hashed_token
           : ''
+    const verificationType =
+      payload && typeof payload.verification_type === 'string'
+        ? payload.verification_type
+        : payload && payload.properties && typeof payload.properties.verification_type === 'string'
+          ? payload.properties.verification_type
+          : 'magiclink'
+    // Email our SPA with token_hash so the click lands on /account (or /buy), not Site URL.
+    // Gmail/Google prefetch of Supabase /verify was burning one-time links before the user opened them.
+    let actionLink = ''
+    if (hashedToken) {
+      try {
+        const signIn = new URL(redirectTo)
+        signIn.searchParams.set('token_hash', hashedToken)
+        signIn.searchParams.set('type', verificationType || 'magiclink')
+        actionLink = signIn.toString()
+      } catch {
+        actionLink = ''
+      }
+    }
+    if (!actionLink) {
+      const rawLink =
+        payload && typeof payload.action_link === 'string'
+          ? payload.action_link
+          : payload && payload.properties && typeof payload.properties.action_link === 'string'
+            ? payload.properties.action_link
+            : ''
+      if (rawLink) {
+        try {
+          const fixed = new URL(rawLink)
+          fixed.searchParams.set('redirect_to', redirectTo)
+          actionLink = fixed.toString()
+        } catch {
+          actionLink = rawLink
+        }
+      }
+    }
     if (!generated.ok || !actionLink) {
       log('magic_link', { ok: false, reason: 'generate' })
       return json({ ok: false, reason: 'mail' }, 502)

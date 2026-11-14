@@ -327,6 +327,11 @@
   color: #314028;
 }
 
+.site-pass-note.is-error {
+  background: #f8e8e4;
+  color: #7a2e22;
+}
+
 .site-pass-download {
   display: flex;
   align-items: center;

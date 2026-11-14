@@ -140,6 +140,47 @@ test('an appsumo key stays on the account beside one dodo key', async () => {
   expect(payload.orders.map((row) => row.order).sort()).toEqual(['appsumo_ANN-TEST-CODE-0001', 'pay_order1234'])
 })
 
+test('magic-link emails an account URL with token_hash', async () => {
+  let generateBody
+  let mailed
+  const fetchImpl = async (url, init) => {
+    if (String(url).includes('/auth/v1/admin/generate_link')) {
+      generateBody = JSON.parse(init.body)
+      return Response.json({
+        hashed_token: 'hash_demo',
+        verification_type: 'magiclink',
+        action_link:
+          'https://nnanwekmhkxcwxrbhtld.supabase.co/auth/v1/verify?token=x&type=magiclink&redirect_to=https://annotated.click',
+      })
+    }
+    if (String(url).includes('api.resend.com')) {
+      mailed = JSON.parse(init.body)
+      return new Response('{}', { status: 200 })
+    }
+    return Response.json({})
+  }
+  const response = await handleBilling(
+    new Request('https://annotated.click/api/auth/magic-link', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'buyer@example.com', redirectTo: 'https://annotated.click/account' }),
+    }),
+    {
+      ...env(keys()),
+      SUPABASE_URL: 'https://nnanwekmhkxcwxrbhtld.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'service_role_test',
+      RESEND_API_KEY: 're_test',
+      ANNOTATED_MAIL_FROM: 'annotated <hello@annotated.click>',
+    },
+    { fetchImpl, now: () => NOW },
+  )
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ ok: true })
+  expect(generateBody.redirect_to).toBe('https://annotated.click/account')
+  expect(mailed.text).toContain('https://annotated.click/account?token_hash=hash_demo')
+  expect(mailed.text).not.toContain('supabase.co/auth/v1/verify')
+})
+
 test('the account can free a seat on its own key only', async () => {
   const material = keys()
   const store = createMemoryBilling([

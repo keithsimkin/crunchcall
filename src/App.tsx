@@ -16,6 +16,7 @@ import { BuyPage } from './ui/BuyPage'
 import { LegalPage } from './ui/LegalPage'
 import { LicensePrompt } from './ui/LicensePrompt'
 import { needsLicensePrompt, sitePage } from './ui/licenseGate'
+import { hasAuthCallback, routeSignedInUser } from './ui/siteAuth'
 import { SITE_URL, useLicense } from './ui/useLicense'
 import { useUpdates } from './ui/useUpdates'
 import type { AskFocus } from './features/ask/context'
@@ -99,6 +100,8 @@ export default function App() {
   const [marketing, setMarketing] = useState(() => {
     if (typeof window === 'undefined') return false
     if (window.crunchcall) return false
+    // Auth callbacks use the hash for tokens/errors — that is not the product surface.
+    if (hasAuthCallback()) return false
     return window.location.hash !== '#app'
   })
   const desktop = typeof window !== 'undefined' && Boolean(window.crunchcall)
@@ -150,6 +153,10 @@ export default function App() {
   useEffect(() => {
     function onPop() {
       setSettingsOpen(null)
+      if (!desktop && hasAuthCallback()) {
+        setMarketing(false)
+        return
+      }
       if (!desktop && window.location.hash !== '#app') {
         setMarketing(true)
         return
@@ -524,6 +531,12 @@ export default function App() {
   }
 
   const page = typeof window === 'undefined' ? null : sitePage(window.location.pathname)
+  // Magic-link callbacks often land on `/` with tokens in the hash. Capture the
+  // session and send signed-in browsers to the account dashboard (not marketing).
+  if (!desktop && typeof window !== 'undefined') {
+    const signedIn = routeSignedInUser(window.location.pathname)
+    if (signedIn && !page) return null
+  }
   if (!desktop && page === 'buy') return <BuyPage />
   if (!desktop && page === 'account') return <AccountPage />
   if (!desktop && page === 'privacy') return <LegalPage kind="privacy" />

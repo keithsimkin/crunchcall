@@ -25,7 +25,7 @@ The account page links to `VITE_WINDOWS_INSTALLER_URL`, or to `https://github.co
 
 ## Email
 
-Sign-in links and license keys both go through Resend (`licensing/mail.mjs`) when `RESEND_API_KEY` and `ANNOTATED_MAIL_FROM` are set on the billing function. `/api/auth/magic-link` asks Supabase Auth to generate a magic link, then Resend delivers it. License mail still runs from the Dodo webhook after payment. The `from` domain must be verified in Resend. If those secrets are empty, sign-in falls back to Supabase Auth mail, and license keys still appear on `/account`.
+Sign-in links and license keys both go through Resend (`licensing/mail.mjs`) when `RESEND_API_KEY` and `ANNOTATED_MAIL_FROM` are set on the billing function. `/api/auth/magic-link` asks Supabase Auth for a `hashed_token`, then Resend emails a link to `https://annotated.click/account?token_hash=…` (or `/buy`). The browser finishes sign-in with Auth `verify` so Gmail/Google link prefetch cannot burn the one-time Supabase `/verify` URL, and users land on the account UI (with a clear error if the link is expired or already used) instead of the marketing homepage. License mail still runs from the Dodo webhook after payment. The `from` domain must be verified in Resend.
 
 ## Deploy
 
