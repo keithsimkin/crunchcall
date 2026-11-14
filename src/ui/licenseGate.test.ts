@@ -29,18 +29,18 @@ test('trial and unlock both count as unlocked; free asks for a key on paid actio
   expect(shouldAskForLicense(false, { tier: 'free' })).toBe(false)
 })
 
-test('buy and account are site pages, and the installer link stays on github unless overridden', () => {
+test('buy and account are site pages, and the installer link defaults to annotated.click', () => {
   expect(sitePage('/buy')).toBe('buy')
   expect(sitePage('/account')).toBe('account')
   expect(sitePage('/account/done')).toBe('account')
   expect(sitePage('/privacy')).toBe('privacy')
   expect(sitePage('/terms')).toBe('terms')
   expect(sitePage('/')).toBeNull()
-  expect(windowsInstallerUrl('')).toBe('https://github.com/keithsimkin/crunchcall/releases/latest')
+  expect(windowsInstallerUrl('')).toBe('https://annotated.click/annotated-setup.exe')
   expect(windowsInstallerUrl('https://annotated.click/annotated-setup.exe')).toBe(
     'https://annotated.click/annotated-setup.exe',
   )
   expect(windowsInstallerUrl('http://example.com/setup.exe')).toBe(
-    'https://github.com/keithsimkin/crunchcall/releases/latest',
+    'https://annotated.click/annotated-setup.exe',
   )
 })
