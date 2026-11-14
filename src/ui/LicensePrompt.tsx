@@ -11,7 +11,15 @@ function openSite(url: string) {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
-export function LicensePrompt({ refresh }: { refresh: () => Promise<unknown> }) {
+export function LicensePrompt({
+  refresh,
+  soft = false,
+  onDismiss,
+}: {
+  refresh: () => Promise<unknown>
+  soft?: boolean
+  onDismiss?: () => void
+}) {
   const [token, setToken] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -34,17 +42,22 @@ export function LicensePrompt({ refresh }: { refresh: () => Promise<unknown> }) 
   }
 
   return (
-    <div className="license-gate">
+    <div className={soft ? 'license-gate soft' : 'license-gate'} role={soft ? 'dialog' : undefined} aria-modal={soft || undefined}>
       <form
         onSubmit={(event) => {
           event.preventDefault()
           void activate()
         }}
       >
-        <h1>Add your license</h1>
-        <p>Paste the key from your account or from AppSumo. annotated checks it on this PC.</p>
+        <h1>{soft ? 'Unlock to continue' : 'Add your license'}</h1>
+        <p>
+          {soft
+            ? 'You can keep browsing. Paste a license when you want live cues and Unlock features.'
+            : 'Paste the key from your account or from AppSumo. annotated checks it on this PC.'}
+        </p>
         <textarea
           aria-label="License"
+          rows={2}
           spellCheck={false}
           autoComplete="off"
           value={token}
@@ -74,6 +87,11 @@ export function LicensePrompt({ refresh }: { refresh: () => Promise<unknown> }) 
           >
             I have an AppSumo code
           </a>
+          {soft && onDismiss ? (
+            <button type="button" className="text-btn" onClick={onDismiss}>
+              Keep browsing
+            </button>
+          ) : null}
         </div>
       </form>
     </div>

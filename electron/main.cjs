@@ -9,6 +9,7 @@ const { createCalendarAccounts, loadClientIds } = require('./calendar-accounts.c
 const updates = require('./updates.cjs')
 const license = require('./license.cjs')
 const seat = require('./license-seat.cjs')
+const trial = require('./license-trial.cjs')
 const demoMode = require('./demo-mode.cjs')
 
 const BUY_URL = 'https://annotated.click/buy'
@@ -854,19 +855,54 @@ function licenseDir() {
   return app.getPath('userData')
 }
 
-function currentLicenseStatus() {
+function resolvedTrialView(dir, trialView) {
+  if (trialView) return trialView
+  const local = trial.readLocal(dir)
+  if (!local) return { applicable: false, active: false, startedAt: 0, endsAt: 0, daysLeft: 0 }
+  return trial.viewTrial(local.startedAt, Math.floor(Date.now() / 1000))
+}
+
+function currentLicenseStatus(trialView) {
+  // Demo profile is always Unlock and must not touch seats or the device trial.
   if (demoOn) return demoMode.demoLicenseStatus()
   const dir = licenseDir()
   const stored = license.readStored(dir, license.bundledPublicKey())
   const base = license.publicStatus(stored, authenticity)
-  if (!seat.seatRequired(base.order)) return seat.decorateStatus(base, { applicable: false, ok: true })
+  let seated = base
+  if (seat.seatRequired(base.order)) {
+    const now = Math.floor(Date.now() / 1000)
+    const deviceId = seat.currentDeviceId(dir)
+    const view = seat.viewSeat(dir, base.order, deviceId, now)
+    if (view.applicable && stored.ok && (view.stale || !view.ok) && view.seat !== 'blocked') {
+      const token = seat.readToken(dir)
+      if (token) {
+        seat.scheduleRecheck({
+          dir,
+          token,
+          order: stored.order,
+          deviceId,
+          deviceLabel: seat.deviceLabel(),
+          now,
+        })
+      }
+    }
+    seated = seat.decorateStatus(base, view)
+  } else {
+    seated = seat.decorateStatus(base, { applicable: false, ok: true })
+  }
+  return trial.decorateStatus(seated, resolvedTrialView(dir, trialView))
+}
+
+async function answeredLicenseStatus() {
+  if (demoOn) return demoMode.demoLicenseStatus()
+  const dir = licenseDir()
   const now = Math.floor(Date.now() / 1000)
   const deviceId = seat.currentDeviceId(dir)
-  const view = seat.viewSeat(dir, base.order, deviceId, now)
-  if (view.applicable && stored.ok && (view.stale || !view.ok) && view.seat !== 'blocked') {
+  const stored = license.readStored(dir, license.bundledPublicKey())
+  if (stored.ok && seat.seatRequired(stored.order)) {
     const token = seat.readToken(dir)
-    if (token) {
-      seat.scheduleRecheck({
+    if (token && deviceId) {
+      await seat.recheckIfDue({
         dir,
         token,
         order: stored.order,
@@ -876,27 +912,8 @@ function currentLicenseStatus() {
       })
     }
   }
-  return seat.decorateStatus(base, view)
-}
-
-async function answeredLicenseStatus() {
-  const dir = licenseDir()
-  const stored = license.readStored(dir, license.bundledPublicKey())
-  if (stored.ok && seat.seatRequired(stored.order)) {
-    const token = seat.readToken(dir)
-    const deviceId = seat.currentDeviceId(dir)
-    if (token && deviceId) {
-      await seat.recheckIfDue({
-        dir,
-        token,
-        order: stored.order,
-        deviceId,
-        deviceLabel: seat.deviceLabel(),
-        now: Math.floor(Date.now() / 1000),
-      })
-    }
-  }
-  return currentLicenseStatus()
+  const trialView = await trial.ensureTrial({ dir, deviceId, now })
+  return currentLicenseStatus(trialView)
 }
 
 async function refreshAuthenticity() {
@@ -1069,8 +1086,8 @@ ipcMain.handle('overlay:session', (event, payload) => {
     hideOverlayWindow()
     return { ok: true, active: false }
   }
-  // Coaching cue body stays Unlock-gated; the nub itself stays free.
-  if (currentLicenseStatus().tier !== 'unlock') next.cue = null
+  // Coaching cue body stays Unlock/trial-gated; the nub itself stays free.
+  if (!trial.isUnlocked(currentLicenseStatus())) next.cue = null
   const positionChanged = next.position !== overlayAnchor
   overlayAnchor = next.position
   overlaySession = next
@@ -1080,7 +1097,7 @@ ipcMain.handle('overlay:session', (event, payload) => {
 
 ipcMain.handle('overlay:set', (event, cue) => {
   if (!fromMain(event)) return { ok: false }
-  const unlocked = currentLicenseStatus().tier === 'unlock'
+  const unlocked = trial.isUnlocked(currentLicenseStatus())
   const nextCue = unlocked ? normalizeOverlayCue(cue) : null
   if (!overlaySession) {
     if (!nextCue) return { ok: false, locked: !unlocked }

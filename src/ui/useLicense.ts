@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { LicenseStatus } from '../desktop'
+import { isUnlocked, shouldAskForLicense } from './licenseGate'
 
 export const SITE_URL = 'https://annotated.click'
 export const BUY_URL = 'https://annotated.click/buy'
@@ -24,7 +25,8 @@ export function useLicense() {
   return {
     desktop,
     status,
-    unlocked: !desktop || status?.tier === 'unlock',
+    unlocked: !desktop || isUnlocked(status),
+    needsKey: shouldAskForLicense(desktop, status),
     refresh,
   }
 }

@@ -13,6 +13,7 @@ import { useSettingsState, type SettingsSection } from './ui/settingsState'
 import { eventMatchesChord } from './ui/shortcuts'
 import { AccountPage } from './ui/AccountPage'
 import { BuyPage } from './ui/BuyPage'
+import { LegalPage } from './ui/LegalPage'
 import { LicensePrompt } from './ui/LicensePrompt'
 import { needsLicensePrompt, sitePage } from './ui/licenseGate'
 import { SITE_URL, useLicense } from './ui/useLicense'
@@ -82,6 +83,7 @@ export default function App() {
   const { calendar, upcoming, due, now } = useCalendarClock()
   const { desktop: calendarDesktop, signIn: calendarSignIn } = useCalendarSignIn()
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null)
+  const [licenseSheetOpen, setLicenseSheetOpen] = useState(false)
   const [profile, setProfile] = useState(() => {
     // Force only inside the isolated Electron demo profile. A browser ?demo=1
     // visit still fills an empty desk, and leaves notes that are already there.
@@ -524,8 +526,21 @@ export default function App() {
   const page = typeof window === 'undefined' ? null : sitePage(window.location.pathname)
   if (!desktop && page === 'buy') return <BuyPage />
   if (!desktop && page === 'account') return <AccountPage />
+  if (!desktop && page === 'privacy') return <LegalPage kind="privacy" />
+  if (!desktop && page === 'terms') return <LegalPage kind="terms" />
   if (desktop && !license.status) return null
-  if (needsLicensePrompt(desktop, license.status)) return <LicensePrompt refresh={license.refresh} />
+  // Soft wall: browse the app without a key. Paid actions open the license sheet.
+  if (needsLicensePrompt(desktop, license.status)) {
+    return <LicensePrompt refresh={license.refresh} />
+  }
+
+  const askForLicense = () => {
+    if (license.unlocked) {
+      setSettingsOpen('license')
+      return
+    }
+    setLicenseSheetOpen(true)
+  }
 
   if (marketing) {
     return (
@@ -743,7 +758,7 @@ export default function App() {
             overlayPosition={settings.overlayPosition}
             cues={settings.cues}
             unlocked={license.unlocked}
-            onUnlock={() => setSettingsOpen('license')}
+            onUnlock={askForLicense}
             hasWriterKey={Boolean(settings.savedKeys[settings.writerId])}
             onBack={() => {
               void refreshDesk()
@@ -769,7 +784,7 @@ export default function App() {
             writerId={settings.writerId}
             hasWriterKey={Boolean(settings.savedKeys[settings.writerId])}
             unlocked={license.unlocked}
-            onUnlock={() => setSettingsOpen('license')}
+            onUnlock={askForLicense}
             folders={folders}
             folderId={folders.find((folder) => folder.meetingIds.includes(notesMeeting.id))?.id ?? ''}
             onFile={(folderId) => fileMeeting(notesMeeting.id, folderId)}
@@ -828,6 +843,17 @@ export default function App() {
             setSettingsOpen(null)
             setView({ name: 'shortcuts' })
           }}
+        />
+      ) : null}
+      {licenseSheetOpen ? (
+        <LicensePrompt
+          soft
+          refresh={async () => {
+            const next = await license.refresh()
+            if (next && (next.tier === 'unlock' || next.tier === 'trial')) setLicenseSheetOpen(false)
+            return next
+          }}
+          onDismiss={() => setLicenseSheetOpen(false)}
         />
       ) : null}
       {setupOpen ? (
