@@ -80,6 +80,7 @@ Routes, after the Netlify proxy:
 - `https://annotated.click/redeem` — `GET` shows the form, `POST` claims the code and shows the key.
 - `https://annotated.click/api/license/activate` — verifies the key and takes a seat.
 - `https://annotated.click/api/license/deactivate` — frees that PC's seat.
+- `https://annotated.click/api/license/trial` — claims or returns the seven-day trial for a hashed device id.
 
 Publish the site from this repo so `netlify.toml` is what Netlify uses. The proxy targets are:
 

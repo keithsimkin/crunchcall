@@ -68,6 +68,16 @@ from = "/account/*"
 to = "/index.html"
 status = 200
 
+[[redirects]]
+from = "/privacy"
+to = "/index.html"
+status = 200
+
+[[redirects]]
+from = "/terms"
+to = "/index.html"
+status = 200
+
 [[edge_functions]]
 function = "redeem-html"
 path = "/redeem"

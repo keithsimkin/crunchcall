@@ -65,10 +65,12 @@
 }
 
 .site-key {
-  min-height: 4.5rem;
-  resize: none;
+  min-height: 2.75rem;
+  max-height: 6rem;
+  resize: vertical;
   font-family: ui-monospace, Consolas, monospace;
   font-size: 12.5px;
+  field-sizing: content;
 }
 
 .site-actions {

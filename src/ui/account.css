@@ -1,0 +1,54 @@
+.account-page {
+  min-height: 100vh;
+  background: #f0f0ec;
+  color: #1c1c1c;
+  font: 16px/1.5 system-ui, sans-serif;
+}
+
+.legal-page main {
+  width: min(42rem, calc(100% - 32px));
+}
+
+.legal-page .fine a {
+  color: inherit;
+}
+
+.legal-page article h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.legal-page article p {
+  margin: 0 0 10px;
+  color: #3a3a36;
+}
+
+.legal-page article p:last-child {
+  margin-bottom: 0;
+}
+
+.account-page main {
+  width: min(40rem, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 48px 0 72px;
+}
+
+.account-page h1 {
+  margin: 0 0 8px;
+  font-size: 1.8rem;
+  letter-spacing: -0.04em;
+}
+
+.account-page .lede,
+.account-page .fine {
+  color: #5f5f5a;
+}
+
+.account-page article {
+  background: #fff;
+  border: 1px solid #e4e4df;
+  border-radius: 16px;
+  padding: 16px;
+  margin: 0 0 14px;
+}

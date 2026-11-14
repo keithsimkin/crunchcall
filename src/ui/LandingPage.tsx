@@ -1,12 +1,57 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import { LogoMark } from './icons'
-import { ACCOUNT_URL, BUY_URL } from './useLicense'
+import { BUY_URL } from './useLicense'
+import { legalCopy, SUPPORT_EMAIL, type LegalKind } from './legalCopy'
 import './LandingPage.css'
 
 type Surface = 'list' | 'live' | 'settings'
 
 type LandingPageProps = {
   onOpenApp: (next?: Surface) => void
+}
+
+type InfoSheet =
+  | { kind: 'legal'; doc: LegalKind }
+  | { kind: 'note'; id: 'data' | 'nobot' | 'support' | 'help' | 'bug' | 'feature' }
+
+const noteCopy: Record<
+  Extract<InfoSheet, { kind: 'note' }>['id'],
+  { title: string; body: string[]; email?: boolean }
+> = {
+  data: {
+    title: 'Data stays on this PC',
+    body: [
+      'Capture, transcription, and the first draft of your notes live on this Windows PC.',
+      'Nothing leaves the machine unless you choose a cloud speech engine or bring your own key for text.',
+    ],
+  },
+  nobot: {
+    title: 'No meeting bot',
+    body: [
+      'annotated never joins Zoom, Meet, Teams, or any other call as a guest.',
+      'It listens on this PC, so the people on the call do not see another participant from us.',
+    ],
+  },
+  support: {
+    title: 'Get support',
+    body: ['Email us and we will help.'],
+    email: true,
+  },
+  help: {
+    title: 'Help center',
+    body: ['We do not have a separate help site yet. Email us with what you need.'],
+    email: true,
+  },
+  bug: {
+    title: 'Report a bug',
+    body: ['Tell us what happened, what you expected, and your Windows version if you can.'],
+    email: true,
+  },
+  feature: {
+    title: 'Request a feature',
+    body: ['Tell us what would make annotated more useful for your calls.'],
+    email: true,
+  },
 }
 
 type Brand = {
@@ -108,70 +153,136 @@ const plans: {
   cadence: string
   blurb: string
   cta: string
-  surface: Surface
   featured: boolean
   recommend?: string
+  comingSoon?: boolean
+  buy?: boolean
   items: string[]
 }[] = [
-  {
-    id: 'local',
-    name: 'Local',
-    price: 'Free',
-    cadence: 'on this PC',
-    blurb: 'Notes for the calls you take, with no account and no bot.',
-    cta: 'Open the app',
-    surface: 'list',
-    featured: false,
-    items: [
-      'Capture on this PC, with no guest in the meeting',
-      'On-device transcription',
-      'Local summaries and action items',
-      'Ask across your notes (local search)',
-      'Searchable history',
-      'No account required',
-    ],
-  },
   {
     id: 'unlock',
     name: 'Unlock',
     price: '$35',
     cadence: 'one time',
-    blurb: 'The full notepad, including coaching while the call is still open.',
-    cta: 'Buy the unlock',
-    surface: 'list',
+    blurb: 'The full notepad for one Windows PC. Try it free for seven days.',
+    cta: 'Start 7-day trial',
     featured: true,
     recommend: 'Recommended if the calls are the job',
+    buy: true,
     items: [
-      'Everything in Local',
+      '7-day free trial',
+      'Run everything locally',
+      'Or bring your own Claude or OpenAI key',
       'Live coaching overlay',
-      'Screen-share-safe cues',
       'Markdown export of the notes',
-      '$35 one-time payment, no subscription',
+      'One PC · pay once',
     ],
   },
   {
-    id: 'byok',
-    name: 'Your key',
-    price: 'Optional',
-    cadence: 'text only',
-    blurb: 'Bring Claude or OpenAI when you want a bigger model for the notes and for Ask.',
-    cta: 'Set up a key',
-    surface: 'settings',
+    id: 'twopack',
+    name: 'Two keys',
+    price: '$45',
+    cadence: 'for 2 PCs',
+    blurb: 'Two unlock licenses. The second key is about 70% off.',
+    cta: 'Buy two keys',
     featured: false,
+    buy: true,
     items: [
-      'Your Claude or OpenAI key',
-      'Used for text, never for audio',
-      'Richer Ask answers from your notes',
-      'Audio still stays on the device',
-      'Keys stay in Windows Credential Manager',
-      'Off unless you turn it on',
+      'Two Unlock licenses',
+      'Second key ~70% off ($35 + $10)',
+      'Run locally or bring your own key',
+      'Live coaching on both PCs',
+      'One-time payment',
+    ],
+  },
+  {
+    id: 'sub',
+    name: 'Subscribe',
+    price: '$10',
+    cadence: 'per month',
+    blurb: 'Same unlock features on a monthly plan, when you prefer a subscription.',
+    cta: 'Coming soon',
+    featured: false,
+    comingSoon: true,
+    items: [
+      'Everything in Unlock',
+      'Live coaching overlay',
+      'Markdown export of the notes',
+      '$10 per month',
+      'Cancel anytime',
     ],
   },
 ]
 
+function InfoDialog({
+  sheet,
+  onClose,
+}: {
+  sheet: InfoSheet
+  onClose: () => void
+}) {
+  const titleId = useId()
+  const legal = sheet.kind === 'legal' ? legalCopy[sheet.doc] : null
+  const note = sheet.kind === 'note' ? noteCopy[sheet.id] : null
+  const title = legal?.title ?? note?.title ?? ''
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [onClose])
+
+  return (
+    <div className="lp-info">
+      <button type="button" className="lp-info-scrim" aria-label="Close" onClick={onClose} />
+      <div className="lp-info-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <header className="lp-info-head">
+          <div>
+            <h2 id={titleId}>{title}</h2>
+            {legal ? <p className="lp-info-meta">Last updated {legal.updated}.</p> : null}
+          </div>
+          <button type="button" className="lp-info-x" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </header>
+        <div className="lp-info-body">
+          {legal
+            ? legal.sections.map((section) => (
+                <section key={section.heading}>
+                  <h3>{section.heading}</h3>
+                  {section.body.map((paragraph) => (
+                    <p key={paragraph}>{paragraph}</p>
+                  ))}
+                </section>
+              ))
+            : null}
+          {note
+            ? note.body.map((paragraph) => (
+                <p key={paragraph}>{paragraph}</p>
+              ))
+            : null}
+          {note?.email ? (
+            <p className="lp-info-email">
+              <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function LandingPage({ onOpenApp }: LandingPageProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [arrived, setArrived] = useState<string | null>(null)
+  const [info, setInfo] = useState<InfoSheet | null>(null)
 
   useEffect(() => {
     const body = document.body
@@ -564,31 +675,32 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
           <Kicker>Pricing</Kicker>
           <h2 id="pricing-title">A notepad you buy once.</h2>
           <p className="lp-sub">
-            Local notes need no account. Coaching and Markdown export are a $35 one-time payment. The installer is signed, and the app checks the license on this PC.
+            Seven-day free trial, then $35 once for one PC — run everything locally, or bring your own Claude or
+            OpenAI key. Two keys are $45. A $10/month plan is coming soon.
           </p>
           <div className="lp-plans">
             {plans.map((plan) => (
-              <article key={plan.id} className={plan.featured ? 'lp-plan featured' : 'lp-plan'}>
-                {plan.recommend ? <p className="lp-recommend">{plan.recommend}</p> : null}
-                <h3>{plan.name}</h3>
-                <p className="lp-price">
-                  {plan.price}
-                  <small>{plan.cadence}</small>
-                </p>
-                <p className="lp-plan-blurb">{plan.blurb}</p>
-                <button
-                  type="button"
-                  className="lp-btn lp-plan-cta"
-                  onClick={() => {
-                    if (plan.id === 'unlock') {
-                      window.open(BUY_URL, '_blank', 'noopener,noreferrer')
-                      return
-                    }
-                    onOpenApp(plan.surface)
-                  }}
-                >
-                  {plan.cta}
-                </button>
+              <article
+                key={plan.id}
+                className={[
+                  'lp-plan',
+                  plan.featured ? 'featured' : '',
+                  plan.comingSoon ? 'coming-soon' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              >
+                <div className="lp-plan-head">
+                  <div className="lp-recommend-slot">
+                    {plan.recommend ? <p className="lp-recommend">{plan.recommend}</p> : null}
+                  </div>
+                  <h3>{plan.name}</h3>
+                  <p className="lp-price">
+                    {plan.price}
+                    <small>{plan.cadence}</small>
+                  </p>
+                  <p className="lp-plan-blurb">{plan.blurb}</p>
+                </div>
                 <p className="lp-youget">You get</p>
                 <ul>
                   {plan.items.map((item) => (
@@ -598,6 +710,20 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                     </li>
                   ))}
                 </ul>
+                <button
+                  type="button"
+                  className="lp-btn lp-plan-cta"
+                  disabled={plan.comingSoon}
+                  aria-disabled={plan.comingSoon || undefined}
+                  onClick={() => {
+                    if (plan.comingSoon) return
+                    if (plan.buy) {
+                      window.open(BUY_URL, '_blank', 'noopener,noreferrer')
+                    }
+                  }}
+                >
+                  {plan.cta}
+                </button>
               </article>
             ))}
           </div>
@@ -667,54 +793,38 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
             </div>
             <div className="lp-footcol">
               <h3>Privacy</h3>
-              <a href="https://annotated.click/privacy" target="_blank" rel="noopener noreferrer">
+              <button type="button" onClick={() => setInfo({ kind: 'legal', doc: 'privacy' })}>
                 Privacy policy
-              </a>
-              <a href="https://annotated.click/terms" target="_blank" rel="noopener noreferrer">
+              </button>
+              <button type="button" onClick={() => setInfo({ kind: 'legal', doc: 'terms' })}>
                 Terms of service
-              </a>
-              <a
-                href="#connect"
-                onClick={(event) => {
-                  event.preventDefault()
-                  go('connect')
-                }}
-              >
+              </button>
+              <button type="button" onClick={() => setInfo({ kind: 'note', id: 'data' })}>
                 Data stays on this PC
-              </a>
-              <a
-                href="#product"
-                onClick={(event) => {
-                  event.preventDefault()
-                  go('product')
-                }}
-              >
+              </button>
+              <button type="button" onClick={() => setInfo({ kind: 'note', id: 'nobot' })}>
                 No meeting bot
-              </a>
+              </button>
             </div>
             <div className="lp-footcol">
               <h3>Support</h3>
-              <a href={ACCOUNT_URL} target="_blank" rel="noopener noreferrer">
-                Your licenses
-              </a>
-              <a href="mailto:hello@annotated.click?subject=annotated%20support">
+              <a href="/account">Your licenses</a>
+              <button type="button" onClick={() => setInfo({ kind: 'note', id: 'support' })}>
                 Get support
-              </a>
-              <a href="https://annotated.click" target="_blank" rel="noopener noreferrer">
+              </button>
+              <button type="button" onClick={() => setInfo({ kind: 'note', id: 'help' })}>
                 Help center
-              </a>
-              <a href="mailto:hello@annotated.click?subject=annotated%20bug%20report">
+              </button>
+              <button type="button" onClick={() => setInfo({ kind: 'note', id: 'bug' })}>
                 Report a bug
-              </a>
-              <a href="mailto:hello@annotated.click?subject=annotated%20feature%20request">
+              </button>
+              <button type="button" onClick={() => setInfo({ kind: 'note', id: 'feature' })}>
                 Request a feature
-              </a>
+              </button>
             </div>
           </div>
           <div className="lp-footer-base">
-            <p>
-              © 2026 annotated · <a href="https://annotated.click">annotated.click</a>
-            </p>
+            <p>© 2026 annotated · annotated.click</p>
             <p>Windows-first · Local by default</p>
           </div>
         </div>
@@ -724,6 +834,8 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
         <img src="/landing/moss-wordmark.jpg" alt="" />
         <strong>annotated</strong>
       </section>
+
+      {info ? <InfoDialog sheet={info} onClose={() => setInfo(null)} /> : null}
     </div>
   )
 }
