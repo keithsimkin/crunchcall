@@ -5,10 +5,14 @@ import { SUPPORT_EMAIL } from './legalCopy'
 import {
   accountRequest,
   authConfig,
+  captureAuthError,
   captureAuthHash,
   clearSession,
+  consumeAuthToken,
+  hasAuthCallback,
   readSession,
   sendMagicLink,
+  takeAuthError,
   type AuthSession,
 } from './siteAuth'
 
@@ -43,6 +47,15 @@ function initialSession(): AuthSession | null {
   return captureAuthHash() || readSession()
 }
 
+function readBootNote(): { message: string; kind: 'ok' | 'error' | 'info' } {
+  if (typeof window === 'undefined') return { message: '', kind: 'info' }
+  const fromCallback = captureAuthError()
+  if (fromCallback) return { message: fromCallback.message, kind: 'error' }
+  const stashed = takeAuthError()
+  if (stashed) return { message: stashed, kind: 'error' }
+  return { message: '', kind: 'info' }
+}
+
 export function AccountPage() {
   const preview = previewAccount()
   const [session, setSession] = useState<AuthSession | null>(initialSession)
@@ -52,9 +65,29 @@ export function AccountPage() {
   const [activations, setActivations] = useState<Activation[]>(preview?.activations ?? [])
   const [revealed, setRevealed] = useState<Record<string, boolean>>({})
   const [copied, setCopied] = useState('')
-  const [note, setNote] = useState('')
+  const [boot] = useState(readBootNote)
+  const [note, setNote] = useState(boot.message)
+  const [noteKind, setNoteKind] = useState<'ok' | 'error' | 'info'>(boot.kind)
   const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [signingIn, setSigningIn] = useState(() => typeof window !== 'undefined' && hasAuthCallback() && !readSession())
+
+  useEffect(() => {
+    let cancel = false
+    void consumeAuthToken().then(({ session: next, error }) => {
+      if (cancel) return
+      setSigningIn(false)
+      if (error) {
+        setNoteKind('error')
+        setNote(error)
+        return
+      }
+      if (next) setSession(next)
+    })
+    return () => {
+      cancel = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!session || session.access_token === 'preview') return
@@ -68,6 +101,7 @@ export function AccountPage() {
         return
       }
       if (!payload || payload.ok !== true) {
+        setNoteKind('error')
         setNote('The account could not be loaded. Refresh and try again.')
         setOrders([])
         return
@@ -84,13 +118,16 @@ export function AccountPage() {
   async function sendLink() {
     setBusy(true)
     setNote('')
+    setNoteKind('info')
     const redirectTo = `${window.location.origin}/account`
     const result = await sendMagicLink(email.trim(), redirectTo)
     setBusy(false)
     if (!result.ok) {
+      setNoteKind('error')
       setNote(result.reason === 'config' ? 'Sign-in is not set up on this site yet.' : 'The email could not be sent. Try again in a moment.')
       return
     }
+    setNoteKind('ok')
     setSent(true)
   }
 
@@ -130,6 +167,20 @@ export function AccountPage() {
   const signedIn = Boolean(session)
   const dodo = (orders || []).filter((order) => !order.order.startsWith('appsumo_'))
   const codes = (orders || []).filter((order) => order.order.startsWith('appsumo_'))
+  const noteClass = noteKind === 'error' ? 'site-pass-note is-error' : noteKind === 'ok' ? 'site-pass-note is-ok' : 'site-pass-note'
+
+  if (signingIn && !signedIn) {
+    return (
+      <SiteShell tone="auth">
+        <div className="site-login">
+          <section className="site-pass">
+            <h1>Signing you in…</h1>
+            <p className="site-pass-lead">One moment while we open your account.</p>
+          </section>
+        </div>
+      </SiteShell>
+    )
+  }
 
   if (!signedIn) {
     return (
@@ -189,8 +240,12 @@ export function AccountPage() {
                 </button>
               </form>
             )}
-            {note ? <p className="site-pass-note">{note}</p> : null}
-            {!authConfig().ready && !sent ? <p className="site-pass-note">Sign-in is not set up on this site yet.</p> : null}
+            {note ? (
+              <p className={noteClass} role={noteKind === 'error' ? 'alert' : 'status'}>
+                {note}
+              </p>
+            ) : null}
+            {!authConfig().ready && !sent ? <p className="site-pass-note is-error">Sign-in is not set up on this site yet.</p> : null}
             <a className="site-pass-download" href={WINDOWS_INSTALLER_URL}>
               Download annotated for Windows
             </a>

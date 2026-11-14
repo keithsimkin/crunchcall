@@ -16,7 +16,7 @@ import { BuyPage } from './ui/BuyPage'
 import { LegalPage } from './ui/LegalPage'
 import { LicensePrompt } from './ui/LicensePrompt'
 import { needsLicensePrompt, sitePage } from './ui/licenseGate'
-import { routeSignedInUser } from './ui/siteAuth'
+import { hasAuthCallback, routeSignedInUser } from './ui/siteAuth'
 import { SITE_URL, useLicense } from './ui/useLicense'
 import { useUpdates } from './ui/useUpdates'
 import type { AskFocus } from './features/ask/context'
@@ -100,6 +100,8 @@ export default function App() {
   const [marketing, setMarketing] = useState(() => {
     if (typeof window === 'undefined') return false
     if (window.crunchcall) return false
+    // Auth callbacks use the hash for tokens/errors — that is not the product surface.
+    if (hasAuthCallback()) return false
     return window.location.hash !== '#app'
   })
   const desktop = typeof window !== 'undefined' && Boolean(window.crunchcall)
@@ -151,6 +153,10 @@ export default function App() {
   useEffect(() => {
     function onPop() {
       setSettingsOpen(null)
+      if (!desktop && hasAuthCallback()) {
+        setMarketing(false)
+        return
+      }
       if (!desktop && window.location.hash !== '#app') {
         setMarketing(true)
         return
