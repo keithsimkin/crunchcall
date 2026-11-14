@@ -111,7 +111,7 @@ export function renderSuccess(license) {
 <textarea id="key" readonly>${escapeHtml(license)}</textarea>
 <div class="row">
 <button type="button" class="ghost" id="copy">Copy key</button>
-<a class="link" href="https://github.com/keithsimkin/crunchcall/releases/latest">Download annotated</a>
+<a class="link" href="https://annotated.click/annotated-setup.exe">Download annotated</a>
 </div>
 <ol>
 <li>Download the Windows app and install it.</li>

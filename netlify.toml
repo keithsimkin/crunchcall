@@ -59,6 +59,20 @@ to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/billing/dodo/webhook
 status = 200
 force = true
 
+# Stable download URL for the landing / account CTAs. Points at the GitHub
+# Releases asset so the ~120MB installer is not rebuilt into every Netlify deploy.
+[[redirects]]
+from = "/annotated-setup.exe"
+to = "https://github.com/keithsimkin/crunchcall/releases/download/v0.1.1/annotated-Setup-0.1.0.exe"
+status = 302
+force = true
+
+[[redirects]]
+from = "/download"
+to = "/annotated-setup.exe"
+status = 302
+force = true
+
 [[redirects]]
 from = "/buy"
 to = "/index.html"

@@ -1,0 +1,4 @@
+# Stable Windows installer URL used by landing / account download CTAs.
+# force (!) so this beats any later SPA rewrite if one is added.
+/annotated-setup.exe  https://github.com/keithsimkin/crunchcall/releases/download/v0.1.1/annotated-Setup-0.1.0.exe  302!
+/download             /annotated-setup.exe  302!
