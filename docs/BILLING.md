@@ -2,6 +2,12 @@
 
 annotated.click is the Netlify site. Purchase, the account, and the Dodo webhook run as one Supabase Edge Function, `billing`. The pages themselves are part of the Vite build.
 
+## Free trial
+
+The Windows app opens without a hard license wall. Browse meetings and take a tour free. Live cues and other Unlock features run during a seven-day trial, then ask for a license when used.
+
+On first status check the app POSTs `https://annotated.click/api/license/trial` with a SHA-256 of a salt plus the Windows MachineGuid (same device id shape as AppSumo seats). The redeem Edge Function stores that hash on `device_trials` once. Uninstall wipes local cache; the same PC still gets the original start time and does not receive another trial. Offline, the app starts a provisional local trial and reconciles to the cloud start when it can reach the server.
+
 ## What the buyer does
 
 1. Click Purchase. The landing button opens `https://annotated.click/buy`.
@@ -36,6 +42,7 @@ supabase secrets set \
   RESEND_API_KEY=… \
   ANNOTATED_MAIL_FROM='annotated <hello@annotated.click>'
 supabase functions deploy billing
+supabase functions deploy redeem
 ```
 
 `ANNOTATED_LICENSE_PRIVATE_KEY` is already the redeem function's signing key. Set it on the project if it is not there yet. `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected. `verify_jwt` is false because Dodo cannot send a Supabase JWT. Checkout and account routes check the user token themselves.
@@ -54,4 +61,4 @@ On the Netlify site `bespoke-cactus-bc1032`, set `VITE_SUPABASE_URL` to `https:/
 - `/api/checkout` → `.../functions/v1/billing/api/checkout`
 - `/api/account` and `/api/account/*` → `.../functions/v1/billing/api/account`
 - `/dodo/webhook` → `.../functions/v1/billing/dodo/webhook`
-- `/buy` and `/account` → `/index.html`
+- `/buy`, `/account`, `/privacy`, and `/terms` → `/index.html`

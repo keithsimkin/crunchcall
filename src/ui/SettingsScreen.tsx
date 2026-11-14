@@ -1045,7 +1045,16 @@ function LicensePage({ license }: { license: LicenseDesk }) {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const unlocked = status?.tier === 'unlock'
-  const plan = !desktop ? 'Checked in the desktop app' : unlocked ? 'Unlock' : 'Free'
+  const onTrial = status?.tier === 'trial'
+  const plan = !desktop
+    ? 'Checked in the desktop app'
+    : unlocked
+      ? 'Unlock'
+      : onTrial
+        ? `Trial · ${status?.trialDaysLeft ?? 0} day${status?.trialDaysLeft === 1 ? '' : 's'} left`
+        : status?.trialEndsAt
+          ? 'Trial ended'
+          : 'Free'
   const appsumo = Boolean(status?.order?.startsWith('appsumo_'))
   const seatActive = status?.license === 'valid' && status?.seat === 'active'
   const canActivate =
@@ -1123,7 +1132,16 @@ function LicensePage({ license }: { license: LicenseDesk }) {
   return (
     <div className="page-stack">
       <Section label="This copy">
-        <Row title="Plan" help={unlocked ? `Licensed to ${status?.email}.` : 'Local notes, transcription, and search stay free.'}>
+        <Row
+          title="Plan"
+          help={
+            unlocked
+              ? `Licensed to ${status?.email}.`
+              : onTrial
+                ? 'Seven-day trial on this PC. Live cues and Unlock features are included until it ends.'
+                : 'Browse and capture notes free. Live cues need Unlock after the trial.'
+          }
+        >
           <span className="pop-value">{plan}</span>
         </Row>
         {status?.order ? (
@@ -1166,6 +1184,7 @@ function LicensePage({ license }: { license: LicenseDesk }) {
             <textarea
               className="license-field"
               aria-label="License"
+              rows={2}
               spellCheck={false}
               autoComplete="off"
               value={token}

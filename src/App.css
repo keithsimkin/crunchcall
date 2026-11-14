@@ -3484,7 +3484,8 @@ code {
 
 .license-field {
   width: 100%;
-  min-height: 76px;
+  min-height: 2.75rem;
+  max-height: 6rem;
   box-sizing: border-box;
   resize: vertical;
   border: 1px solid var(--line);
@@ -3495,6 +3496,7 @@ code {
   font-family: ui-monospace, Consolas, monospace;
   font-size: 12px;
   line-height: 1.4;
+  field-sizing: content;
 }
 
 .pop-path-inline {

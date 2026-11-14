@@ -259,3 +259,47 @@ test('redeem and activate hide secrets and repeat the same key', async () => {
   )
   expect(await activated.json()).toEqual({ ok: true, limited: true, maxDevices: 1 })
 })
+
+test('a device trial is claimed once and survives a second call with the same id', async () => {
+  const { createMemoryTrials, TRIAL_SECONDS } = await import('./trials.mjs')
+  const trials = createMemoryTrials()
+  const deviceId = 'b'.repeat(64)
+  const env = { ANNOTATED_LICENSE_PRIVATE_KEY: 'unused' }
+  const first = await handleRequest(
+    new Request('https://annotated.click/api/license/trial', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId }),
+    }),
+    env,
+    { trials, now: () => ISSUED },
+  )
+  const firstBody = await first.json()
+  expect(firstBody).toEqual({
+    ok: true,
+    startedAt: ISSUED,
+    endsAt: ISSUED + TRIAL_SECONDS,
+    active: true,
+    daysLeft: 7,
+    created: true,
+  })
+
+  const again = await handleRequest(
+    new Request('https://annotated.click/api/license/trial', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId }),
+    }),
+    env,
+    { trials, now: () => ISSUED + 3 * 86400 },
+  )
+  const againBody = await again.json()
+  expect(againBody).toEqual({
+    ok: true,
+    startedAt: ISSUED,
+    endsAt: ISSUED + TRIAL_SECONDS,
+    active: true,
+    daysLeft: 4,
+    created: false,
+  })
+})
