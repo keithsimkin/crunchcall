@@ -197,8 +197,21 @@ function buildCalendar(now = Date.now()): CalendarEvent[] {
     }
   }
   return [
-    day(0, 14, 0, 45, 'Customer check-in — Northwind', 'Zoom · Pricing follow-up', 'demo-northwind'),
-    day(0, 16, 30, 30, 'Design critique', 'Meet · Overlay polish', 'demo-critique'),
+    (() => {
+      const start = new Date(now + 3 * 60 * 60 * 1000)
+      start.setMinutes(0, 0, 0)
+      const startMs = start.getTime()
+      return {
+        uid: 'demo-northwind',
+        instanceKey: `demo-northwind:${startMs}`,
+        title: 'Customer check-in — Northwind',
+        start: startMs,
+        end: startMs + 45 * 60_000,
+        allDay: false,
+        detail: 'Zoom · Pricing follow-up with Sam',
+      }
+    })(),
+    day(5, 16, 30, 30, 'Design critique', 'Meet · Overlay polish with Priya', 'demo-critique'),
     day(1, 9, 30, 60, 'Weekly product sync', 'Meet · Launch sequence', 'demo-product'),
     day(1, 13, 0, 45, 'Lumen pilot kickoff', 'Zoom · Overlay off for call one', 'demo-lumen'),
     day(2, 10, 0, 30, 'Hiring panel debrief', 'Rooms · Design loop', 'demo-hiring'),
@@ -222,7 +235,7 @@ export function deskIsEmpty(): boolean {
 /** Writes meetings, notes, projects, dictations, calendar, and a demo profile. */
 export function seedDemoData(options?: { force?: boolean }): boolean {
   if (typeof localStorage === 'undefined') return false
-  const force = Boolean(options?.force) || demoForced()
+  const force = Boolean(options?.force)
   if (!force && demoDisabled()) return false
   if (!force && !deskIsEmpty()) return false
 
@@ -234,12 +247,18 @@ export function seedDemoData(options?: { force?: boolean }): boolean {
   seedDemoCalendar(buildCalendar(now))
   enableDemoSeed()
 
+  try {
+    localStorage.setItem('crunchcall.theme', 'light')
+  } catch {
+    /* ignore */
+  }
+
   const profile = readProfile()
-  if (!profile.onboarded || !profile.name.trim()) {
+  if (force || !profile.onboarded || !profile.name.trim()) {
     writeProfile({
-      name: profile.name.trim() || 'Alex Rivera',
+      name: 'Alex Rivera',
       onboarded: true,
-      mcpClient: profile.mcpClient || 'claude',
+      mcpClient: 'claude',
       mcpCopied: true,
     })
   }

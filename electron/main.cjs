@@ -1,13 +1,16 @@
 const { app, BrowserWindow, ipcMain, nativeImage, Notification, Tray, Menu, globalShortcut, clipboard, screen, shell, safeStorage, session, desktopCapturer } =
   require('electron')
 const path = require('path')
+const fs = require('fs')
 const { execFile } = require('child_process')
 const sidecar = require('./sidecar.cjs')
+const { recordWebContents } = require('./frame-recorder.cjs')
 const { createCalendarAccounts, loadClientIds } = require('./calendar-accounts.cjs')
 const updates = require('./updates.cjs')
 const license = require('./license.cjs')
 const seat = require('./license-seat.cjs')
 const trial = require('./license-trial.cjs')
+const demoMode = require('./demo-mode.cjs')
 
 const BUY_URL = 'https://annotated.click/buy'
 const ACCOUNT_URL = 'https://annotated.click/account'
@@ -52,6 +55,21 @@ const OVERLAY_COLLAPSED_HEIGHT = 72
 const OVERLAY_EXPANDED_HEIGHT = 380
 const DICTATE_WIDTH = 280
 const DICTATE_HEIGHT = 64
+
+const demoOn = demoMode.demoRequested(process.argv, process.env)
+const captureOut = demoMode.captureDirectory(process.argv)
+const recordOut = demoMode.recordDirectory(process.argv)
+const studio = Boolean(captureOut || recordOut)
+if (demoOn) {
+  const demoDir = demoMode.demoUserDataPath(app.getPath('appData'))
+  app.setPath('userData', demoDir)
+  // The engine reads this before LOCALAPPDATA\CrunchCall. Set it in this process
+  // before the sidecar is spawned so a demo session cannot open the real notes.
+  process.env.CRUNCHCALL_DATA_DIR = demoDir
+}
+if (studio) {
+  app.commandLine.appendSwitch('force-device-scale-factor', '2')
+}
 
 app.setAppUserModelId(APP_USER_MODEL_ID)
 
@@ -204,18 +222,28 @@ function flushCommand() {
 }
 
 function loadSurface(target, hash) {
-  if (!app.isPackaged) {
+  const surface = String(hash).split('?')[0]
+  const query = {}
+  if (demoOn) query.demo = '1'
+  if (recordOut) query.record = '1'
+  if (!app.isPackaged && !studio) {
     try {
       const url = new URL(devUrl)
-      url.hash = hash
+      if (demoOn) url.searchParams.set('demo', '1')
+      if (recordOut) url.searchParams.set('record', '1')
+      url.hash = surface
       target.loadURL(url.toString())
       return
     } catch {
-      target.loadURL(`http://127.0.0.1:5173/#${hash}`)
+      const params = new URLSearchParams(query).toString()
+      target.loadURL(`http://127.0.0.1:5173/${params ? `?${params}` : ''}#${surface}`)
       return
     }
   }
-  target.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash })
+  target.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), {
+    hash: surface,
+    query,
+  })
 }
 
 function releaseLink(value) {
@@ -471,12 +499,13 @@ function pushOverlaySession() {
 
 function showOverlayWindow(forceAnchor = false) {
   const bar = ensureOverlay()
-  bar.setContentProtection(true)
+  if (!studio) bar.setContentProtection(true)
   placeOverlay(bar, forceAnchor || !bar.isVisible())
   pushOverlaySession()
   if (bar.isMinimized()) bar.restore()
   bar.showInactive()
   bar.moveTop()
+  return bar
 }
 
 function hideOverlayWindow() {
@@ -498,7 +527,7 @@ function ensureOverlay() {
     x: spot.x,
     y: spot.y,
     frame: false,
-    transparent: true,
+    transparent: !studio,
     resizable: false,
     movable: true,
     maximizable: false,
@@ -509,7 +538,7 @@ function ensureOverlay() {
     alwaysOnTop: true,
     hasShadow: false,
     show: false,
-    backgroundColor: '#00000000',
+    backgroundColor: studio ? '#f3f3ef' : '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -519,7 +548,7 @@ function ensureOverlay() {
     },
   })
   overlayWin.setAlwaysOnTop(true, 'screen-saver')
-  overlayWin.setContentProtection(true)
+  if (!studio) overlayWin.setContentProtection(true)
   overlayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   loadSurface(overlayWin, 'overlay')
   overlayWin.webContents.on('did-finish-load', () => {
@@ -548,8 +577,8 @@ function createWindow() {
   const isMac = process.platform === 'darwin'
   const chrome = chromeThemes.dark
   win = new BrowserWindow({
-    width: 1280,
-    height: 840,
+    width: studio ? 1440 : 1280,
+    height: studio ? 900 : 840,
     minWidth: 900,
     minHeight: 640,
     backgroundColor: chrome.canvas,
@@ -567,6 +596,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       backgroundThrottling: false,
+      additionalArguments: demoOn ? ['--annotated-demo-isolated'] : [],
     },
   })
 
@@ -833,6 +863,8 @@ function resolvedTrialView(dir, trialView) {
 }
 
 function currentLicenseStatus(trialView) {
+  // Demo profile is always Unlock and must not touch seats or the device trial.
+  if (demoOn) return demoMode.demoLicenseStatus()
   const dir = licenseDir()
   const stored = license.readStored(dir, license.bundledPublicKey())
   const base = license.publicStatus(stored, authenticity)
@@ -862,6 +894,7 @@ function currentLicenseStatus(trialView) {
 }
 
 async function answeredLicenseStatus() {
+  if (demoOn) return demoMode.demoLicenseStatus()
   const dir = licenseDir()
   const now = Math.floor(Date.now() / 1000)
   const deviceId = seat.currentDeviceId(dir)
@@ -1123,6 +1156,105 @@ ipcMain.handle('app:login-set', (_event, on) => {
   app.setLoginItemSettings({ openAtLogin: Boolean(on) })
 })
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function runCapture(dir) {
+  fs.mkdirSync(dir, { recursive: true })
+  win.webContents.on('console-message', (_event, level, message) => {
+    if (level >= 2) console.error(`renderer: ${message}`)
+  })
+  win.webContents.on('did-fail-load', (_event, code, desc, url) => {
+    console.error(`fail-load ${code} ${desc} ${url}`)
+  })
+  const start = Date.now()
+  let ready = false
+  while (Date.now() - start < 20000) {
+    ready = Boolean(await win.webContents.executeJavaScript('typeof window.__annotatedCapture === "function"'))
+    if (ready) break
+    await delay(200)
+  }
+  if (!ready) {
+    const where = await win.webContents.executeJavaScript(
+      'JSON.stringify({ href: location.href, hash: location.hash, text: (document.body && document.body.innerText || "").slice(0, 400) })',
+    ).catch((error) => String(error))
+    throw new Error(`Demo capture did not start. ${where}`)
+  }
+  win.setContentSize(1440, 900)
+  for (const name of demoMode.CAPTURE_SCREENS) {
+    const ok = await win.webContents.executeJavaScript(`window.__annotatedCapture(${JSON.stringify(name)})`)
+    if (!ok) throw new Error(`capture ${name} timed out before the screen finished painting`)
+    if (overlayWin && !overlayWin.isDestroyed()) overlayWin.hide()
+    const image = await win.webContents.capturePage()
+    fs.writeFileSync(path.join(dir, `${name}.png`), image.toPNG())
+  }
+  overlayExpanded = true
+  overlayAnchor = 'center'
+  overlaySession = demoMode.demoOverlaySession()
+  const overlay = showOverlayWindow(true)
+  await new Promise((resolve) => {
+    if (overlay.webContents.isLoading()) overlay.webContents.once('did-finish-load', () => setTimeout(resolve, 500))
+    else setTimeout(resolve, 500)
+  })
+  placeOverlay(overlay, true)
+  const overlayImage = await overlay.webContents.capturePage()
+  fs.writeFileSync(path.join(dir, 'overlay.png'), overlayImage.toPNG())
+  console.log(`captured ${demoMode.CAPTURE_SCREENS.length + 1} screens in ${dir}`)
+  quitting = true
+  app.exit(0)
+}
+
+async function runRecord(dir) {
+  fs.mkdirSync(dir, { recursive: true })
+  const chapters = []
+  let started = 0
+  ipcMain.on('tour:chapter', (_event, title) => {
+    if (!started) return
+    chapters.push({ t: demoMode.chapterStamp(started, Date.now()), title: String(title || '') })
+  })
+  ipcMain.handle('tour:overlay', async () => {
+    if (!overlaySession) {
+      overlayExpanded = true
+      overlaySession = demoMode.demoOverlaySession()
+    }
+    overlayExpanded = true
+    const overlay = showOverlayWindow(true)
+    await delay(500)
+    const clip = await recordWebContents(overlay.webContents, path.join(dir, 'overlay.webm'))
+    await delay(7000)
+    await clip.stop()
+    fs.writeFileSync(
+      path.join(dir, 'overlay.json'),
+      `${JSON.stringify([{ t: 0, title: 'The meeting overlay' }], null, 2)}\n`,
+    )
+    if (overlayWin && !overlayWin.isDestroyed()) overlayWin.hide()
+  })
+  win.webContents.on('console-message', (event) => {
+    const message = event && typeof event === 'object' && 'message' in event ? event.message : ''
+    if (message) console.error(`renderer: ${message}`)
+  })
+  const start = Date.now()
+  let ready = false
+  while (Date.now() - start < 20000) {
+    ready = Boolean(await win.webContents.executeJavaScript('typeof window.__annotatedTour === "function"'))
+    if (ready) break
+    await delay(200)
+  }
+  if (!ready) throw new Error('Demo tour did not start. Run bun run build, then record again.')
+  win.setContentSize(1440, 900)
+  const clip = await recordWebContents(win.webContents, path.join(dir, 'walkthrough.webm'))
+  started = Date.now()
+  const tourOk = await win.webContents.executeJavaScript('window.__annotatedTour()')
+  if (tourOk === false) console.error('demo tour reported a failure')
+  await clip.stop()
+  fs.writeFileSync(path.join(dir, 'walkthrough.json'), `${JSON.stringify(chapters, null, 2)}\n`)
+  console.log(`recorded ${chapters.map((item) => `${item.t}s ${item.title}`).join(' | ')}`)
+  console.log(`walkthrough files in ${dir}`)
+  quitting = true
+  app.exit(0)
+}
+
 app.whenReady().then(() => {
   void refreshAuthenticity()
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
@@ -1148,7 +1280,18 @@ app.whenReady().then(() => {
     quitting = true
   })
   createWindow()
-  void updates.checkForAppUpdate()
+  if (recordOut || captureOut) {
+    win.webContents.once('did-finish-load', () => {
+      const job = recordOut ? runRecord(recordOut) : runCapture(captureOut)
+      void job.catch((error) => {
+        console.error(error && error.stack ? error.stack : error)
+        quitting = true
+        app.exit(1)
+      })
+    })
+  } else {
+    void updates.checkForAppUpdate()
+  }
   // Default Ctrl+Win / Ctrl+Cmd; renderer can rebind via shortcuts:dictate.
   registerDictateShortcut(
     { ctrl: true, shift: false, alt: false, meta: true, key: '' },
