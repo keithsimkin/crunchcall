@@ -25,7 +25,7 @@ The account page links to `VITE_WINDOWS_INSTALLER_URL`, or to `https://github.co
 
 ## Email
 
-Supabase's built-in mail sends the magic link only. On the free plan those messages are heavily rate-limited, and they cannot carry the license key. The key email goes through `sendLicenseEmail` in `licensing/mail.mjs`. It POSTs to Resend's HTTPS API when both `RESEND_API_KEY` and `ANNOTATED_MAIL_FROM` are set. There is no provider SDK. Resend's free tier is enough for this volume. If the variables are empty, the webhook still stores the key and `/account` shows it. No other sender is wired up. To use a different HTTPS mail API, replace that one function.
+Sign-in links and license keys both go through Resend (`licensing/mail.mjs`) when `RESEND_API_KEY` and `ANNOTATED_MAIL_FROM` are set on the billing function. `/api/auth/magic-link` asks Supabase Auth to generate a magic link, then Resend delivers it. License mail still runs from the Dodo webhook after payment. The `from` domain must be verified in Resend. If those secrets are empty, sign-in falls back to Supabase Auth mail, and license keys still appear on `/account`.
 
 ## Deploy
 
@@ -49,16 +49,19 @@ supabase functions deploy redeem
 
 In the Dodo dashboard, the webhook URL is `https://annotated.click/dodo/webhook` and the event is `payment.succeeded`.
 
-In Supabase Auth, set the site URL to `https://annotated.click` and add redirect URLs:
+In Supabase Auth, set the site URL to `https://annotated.click` and allow these redirects (wildcards included where supported):
 
-- `https://annotated.click/buy`
-- `https://annotated.click/account`
+- `https://annotated.click` and `https://annotated.click/**`
+- `https://annotated.click/buy`, `https://annotated.click/account`
+- `https://annotation1.netlify.app` and `https://annotation1.netlify.app/**`
+- `http://127.0.0.1:5173/**` and `http://localhost:5173/**`
 
 On the Netlify site `bespoke-cactus-bc1032`, set `VITE_SUPABASE_URL` to `https://nnanwekmhkxcwxrbhtld.supabase.co` and `VITE_SUPABASE_ANON_KEY` to the anon key, then publish `main`. The build stays `bun run build` and the publish directory stays `dist`.
 
 `netlify.toml` proxies:
 
 - `/api/checkout` → `.../functions/v1/billing/api/checkout`
+- `/api/auth/magic-link` → `.../functions/v1/billing/api/auth/magic-link`
 - `/api/account` and `/api/account/*` → `.../functions/v1/billing/api/account`
 - `/dodo/webhook` → `.../functions/v1/billing/dodo/webhook`
 - `/buy`, `/account`, `/privacy`, and `/terms` → `/index.html`

@@ -1,8 +1,104 @@
-import { useEffect, useId, useState, type ReactNode } from 'react'
-import { LogoMark } from './icons'
+import { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react'
+import { WINDOWS_INSTALLER_URL } from './download'
+import { DownloadIcon, LogoMark } from './icons'
 import { BUY_URL } from './useLicense'
 import { legalCopy, SUPPORT_EMAIL, type LegalKind } from './legalCopy'
 import './LandingPage.css'
+
+const mcpDataLeaves = [
+  { id: 'meetings', label: 'Meetings', hint: 'list & search', x: 14, y: 18 },
+  { id: 'summaries', label: 'Summaries', hint: 'read notes', x: 8, y: 48 },
+  { id: 'actions', label: 'Next steps', hint: 'owners & dates', x: 14, y: 78 },
+] as const
+
+const mcpToolLeaves = [
+  { id: 'claude', name: 'Claude', src: '/logos/claude.svg', x: 86, y: 14 },
+  { id: 'cursor', name: 'Cursor', src: '/logos/cursor.svg', x: 92, y: 38 },
+  { id: 'chatgpt', name: 'ChatGPT', src: '/logos/chatgpt.svg', x: 92, y: 62 },
+  { id: 'gemini', name: 'Gemini', src: '/logos/gemini.svg', x: 86, y: 86 },
+] as const
+
+const mcpBranches = [
+  { id: 'to-meetings', d: 'M450 240 C340 230 250 150 145 95' },
+  { id: 'to-summaries', d: 'M450 240 C320 240 200 240 95 240' },
+  { id: 'to-actions', d: 'M450 240 C340 250 250 330 145 385' },
+  { id: 'to-claude', d: 'M450 240 C560 200 680 130 770 80' },
+  { id: 'to-cursor', d: 'M450 240 C580 220 700 195 820 185' },
+  { id: 'to-chatgpt', d: 'M450 240 C580 260 700 285 820 295' },
+  { id: 'to-gemini', d: 'M450 240 C560 280 680 350 770 400' },
+] as const
+
+function ConnectTree() {
+  return (
+    <figure
+      className="lp-mcp-tree"
+      aria-label="Local MCP connects notes on this PC to Claude, Cursor, ChatGPT, and Gemini"
+    >
+      <svg className="lp-mcp-branches" viewBox="0 0 900 480" aria-hidden="true">
+        {mcpBranches.map((branch, index) => (
+          <path
+            key={branch.id}
+            className="lp-mcp-branch"
+            d={branch.d}
+            style={{ '--lp-branch-i': String(index) } as CSSProperties}
+          />
+        ))}
+      </svg>
+
+      <div className="lp-mcp-hub">
+        <span className="lp-mcp-hub-mark">
+          <LogoMark size={28} />
+        </span>
+        <span className="lp-mcp-hub-copy">
+          <strong>Local MCP</strong>
+          <small>Notes on this PC</small>
+        </span>
+      </div>
+
+      {mcpDataLeaves.map((leaf, index) => (
+        <div
+          key={leaf.id}
+          className="lp-mcp-leaf is-data"
+          style={
+            {
+              left: `${leaf.x}%`,
+              top: `${leaf.y}%`,
+              '--lp-leaf-i': String(index),
+            } as CSSProperties
+          }
+        >
+          <span className="lp-mcp-leaf-dot" aria-hidden="true" />
+          <span className="lp-mcp-leaf-copy">
+            <strong>{leaf.label}</strong>
+            <small>{leaf.hint}</small>
+          </span>
+        </div>
+      ))}
+
+      {mcpToolLeaves.map((leaf, index) => (
+        <div
+          key={leaf.id}
+          className="lp-mcp-leaf is-tool"
+          style={
+            {
+              left: `${leaf.x}%`,
+              top: `${leaf.y}%`,
+              '--lp-leaf-i': String(index + mcpDataLeaves.length),
+            } as CSSProperties
+          }
+        >
+          <span className="lp-mcp-leaf-tile">
+            <img src={leaf.src} alt="" />
+          </span>
+          <span className="lp-mcp-leaf-copy">
+            <strong>{leaf.name}</strong>
+            <small>MCP client</small>
+          </span>
+        </div>
+      ))}
+    </figure>
+  )
+}
 
 type Surface = 'list' | 'live' | 'settings'
 
@@ -67,12 +163,6 @@ const callPlatforms: Brand[] = [
   { id: 'teams', name: 'Microsoft Teams', src: '/logos/teams.svg' },
   { id: 'slack', name: 'Slack', src: '/logos/slack.svg' },
   { id: 'webex', name: 'Webex', src: '/logos/webex.svg' },
-]
-
-const ecosystem: Brand[] = [
-  ...callPlatforms,
-  { id: 'claude', name: 'Claude', src: '/logos/claude.svg' },
-  { id: 'openai', name: 'OpenAI', src: '/logos/openai.svg' },
 ]
 
 function Kicker({ children }: { children: ReactNode }) {
@@ -401,9 +491,15 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
               Pricing
             </a>
           </nav>
-          <button type="button" className="lp-nav-cta" onClick={() => onOpenApp('list')}>
-            Open the app
-          </button>
+          <div className="lp-nav-actions">
+            <a className="lp-nav-cta lp-nav-cta-ghost" href={WINDOWS_INSTALLER_URL}>
+              <DownloadIcon className="lp-nav-ico" />
+              Download
+            </a>
+            <a className="lp-nav-cta" href="/account">
+              Sign in
+            </a>
+          </div>
         </header>
       </div>
 
@@ -575,21 +671,13 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
         </section>
 
         <section className="lp-block lp-reveal" id="connect" aria-labelledby="connect-title">
-          <Kicker>Integrations</Kicker>
-          <h2 id="connect-title">Private by default. A bigger model only if you bring one.</h2>
+          <Kicker>Connect</Kicker>
+          <h2 id="connect-title">Let Claude, Cursor, and ChatGPT read the notes on this PC.</h2>
           <p className="lp-sub">
-            Audio stays on this machine. Claude and OpenAI see text only, and only when you turn that on.
+            A local MCP server so the tools you already use can search meetings, open summaries, and pull next
+            steps — without a cloud hop, and without shipping audio. Local only, and read-only.
           </p>
-          <ul className="lp-icon-grid">
-            {ecosystem.map((brand) => (
-              <li key={brand.id}>
-                <span className="lp-tile">
-                  <img src={brand.src} alt="" className={brand.wide ? 'is-wide' : undefined} />
-                </span>
-                <span>{brand.name}</span>
-              </li>
-            ))}
-          </ul>
+          <ConnectTree />
         </section>
 
         <section className="lp-block lp-reveal" id="compare" aria-labelledby="compare-title">
@@ -785,7 +873,7 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
                   go('connect')
                 }}
               >
-                Integrations
+                Connect
               </a>
               <button type="button" onClick={() => onOpenApp('list')}>
                 Open the app

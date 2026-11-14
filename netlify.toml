@@ -36,6 +36,12 @@ status = 200
 force = true
 
 [[redirects]]
+from = "/api/auth/magic-link"
+to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/billing/api/auth/magic-link"
+status = 200
+force = true
+
+[[redirects]]
 from = "/api/account"
 to = "https://nnanwekmhkxcwxrbhtld.supabase.co/functions/v1/billing/api/account"
 status = 200

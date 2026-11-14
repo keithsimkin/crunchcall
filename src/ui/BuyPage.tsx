@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { SiteKicker, SiteShell } from './SiteShell'
+import { WINDOWS_INSTALLER_URL } from './download'
+import { SiteShell } from './SiteShell'
+import { SUPPORT_EMAIL } from './legalCopy'
 import { accountRequest, authConfig, captureAuthHash, readSession, sendMagicLink, type AuthSession } from './siteAuth'
 
 type BuyState = 'form' | 'sent' | 'ready' | 'owned'
@@ -26,7 +28,7 @@ export function BuyPage() {
   async function sendLink() {
     setBusy(true)
     setNote('')
-    const result = await sendMagicLink(email.trim(), 'https://annotated.click/buy')
+    const result = await sendMagicLink(email.trim(), `${window.location.origin}/buy`)
     setBusy(false)
     if (!result.ok) {
       setNote(result.reason === 'config' ? 'Sign-in is not set up on this site yet.' : 'The email could not be sent. Try again in a moment.')
@@ -62,81 +64,95 @@ export function BuyPage() {
   }
 
   return (
-    <SiteShell>
-      <SiteKicker>Unlock</SiteKicker>
-      <h1>Get annotated.</h1>
-      <p className="site-lead">$35 once, one Windows PC. Local notes stay free.</p>
-      <section className="lp-feature-card site-card">
-        {phase === 'sent' ? (
-          <>
-            <h2>Check your email.</h2>
-            <p>The sign-in link is on its way. It opens this page again, and then you can continue to checkout.</p>
-          </>
-        ) : null}
-        {phase === 'owned' ? (
-          <>
-            <h2>You already have Unlock.</h2>
-            <p>This email has a license. Open your account to copy the key and download the app.</p>
-            <div className="site-actions">
-              <a className="lp-btn lp-btn-dark" href="/account">
-                Open your account
-              </a>
-            </div>
-          </>
-        ) : null}
-        {phase === 'ready' ? (
-          <>
-            <h2>Continue to checkout.</h2>
-            <p>You are signed in. One payment covers this Windows PC.</p>
-            <div className="site-actions">
-              <button type="button" className="lp-btn lp-btn-dark" disabled={busy} onClick={() => void continueToPayment()}>
+    <SiteShell tone="auth">
+      <div className="site-login">
+        <section className="site-pass">
+          {phase === 'sent' ? (
+            <>
+              <h1>Check your inbox</h1>
+              <p className="site-pass-lead">
+                We emailed a sign-in link{email ? ` to ${email}` : ''}. Open it to continue to checkout.
+              </p>
+              <p className="site-pass-note is-ok">
+                Sent from hello@annotated.click. If you do not see it in a minute, check your spam or junk folder.
+              </p>
+              <button
+                type="button"
+                className="site-pass-go"
+                disabled={busy || !email.trim()}
+                onClick={() => void sendLink()}
+              >
+                {busy ? 'Sending…' : 'Send the email again'}
+              </button>
+              <p className="site-pass-help">
+                Still nothing?{' '}
+                <a href={`mailto:${SUPPORT_EMAIL}?subject=annotated%20buy%20help`}>Email us</a>
+              </p>
+            </>
+          ) : null}
+          {phase === 'owned' ? (
+            <>
+              <h1>You already have Unlock</h1>
+              <p className="site-pass-lead">This email already has a license. Open your account to copy the key.</p>
+              <div className="site-desk-actions">
+                <a className="is-primary" href="/account">
+                  Open your account
+                </a>
+              </div>
+            </>
+          ) : null}
+          {phase === 'ready' ? (
+            <>
+              <h1>Continue to checkout</h1>
+              <p className="site-pass-lead">You are signed in. One payment covers this Windows PC.</p>
+              <button type="button" className="site-pass-go" disabled={busy} onClick={() => void continueToPayment()}>
                 {busy ? 'Opening checkout…' : 'Continue to checkout'}
               </button>
-            </div>
-          </>
-        ) : null}
-        {phase === 'form' ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault()
-              void sendLink()
-            }}
-          >
-            <h2>Sign in to buy.</h2>
-            <p>We email a link. There is no password.</p>
-            <label htmlFor="buy-email">Email</label>
-            <input
-              id="buy-email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              disabled={!ready || busy}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-            <div className="site-actions">
-              <button type="submit" className="lp-btn lp-btn-dark" disabled={busy || !authConfig().ready}>
-                {busy ? 'Sending…' : 'Email me a sign-in link'}
+            </>
+          ) : null}
+          {phase === 'form' ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault()
+                void sendLink()
+              }}
+            >
+              <h1>Buy Unlock</h1>
+              <p className="site-pass-lead">Hey — enter your email and we will send a sign-in link. No password.</p>
+              <label htmlFor="buy-email">Email</label>
+              <input
+                id="buy-email"
+                type="email"
+                autoComplete="email"
+                required
+                placeholder="you@company.com"
+                value={email}
+                disabled={!ready || busy}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+              <p className="site-pass-help">
+                Having trouble?{' '}
+                <a href={`mailto:${SUPPORT_EMAIL}?subject=annotated%20buy%20help`}>Email us</a>
+              </p>
+              <button type="submit" className="site-pass-go" disabled={busy || !authConfig().ready}>
+                {busy ? 'Sending…' : 'Sign in to buy'}
               </button>
-            </div>
-          </form>
-        ) : null}
-        {note ? <p className="site-note">{note}</p> : null}
-        {!authConfig().ready && phase === 'form' ? <p className="site-note">Sign-in is not set up on this site yet.</p> : null}
-      </section>
-      <div className="lp-stats site-trust">
-        <article>
-          <strong>$35</strong>
-          <span>One-time payment</span>
-        </article>
-        <article>
-          <strong>On-device</strong>
-          <span>Notes stay on this PC</span>
-        </article>
-        <article>
-          <strong>No bot</strong>
-          <span>Nothing joins the call</span>
-        </article>
+            </form>
+          ) : null}
+          {note ? <p className="site-pass-note">{note}</p> : null}
+          {!authConfig().ready && phase === 'form' ? <p className="site-pass-note">Sign-in is not set up on this site yet.</p> : null}
+          <a className="site-pass-download" href={WINDOWS_INSTALLER_URL}>
+            Download annotated for Windows
+          </a>
+          <p className="site-pass-foot">
+            Already bought? <a href="/account">Open your account</a>
+          </p>
+        </section>
+
+        <aside className="site-login-side" aria-hidden="true">
+          <div className="site-bubble" />
+          <div className="site-block" />
+        </aside>
       </div>
     </SiteShell>
   )

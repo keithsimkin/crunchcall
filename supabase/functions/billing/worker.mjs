@@ -1,4 +1,4 @@
-import { sendLicenseEmail } from '../../../licensing/mail.mjs'
+import { sendLicenseEmail, sendMagicLinkEmail } from '../../../licensing/mail.mjs'
 import {
   dodoApiBase,
   dodoCheckoutBody,
@@ -14,6 +14,19 @@ const ORIGIN = 'https://annotated.click'
 
 function log(event, fields) {
   console.log(JSON.stringify({ event, ...fields }))
+}
+
+function isAllowedRedirect(value) {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
+    if (url.hostname === 'annotated.click') return true
+    if (url.hostname === '127.0.0.1' || url.hostname === 'localhost') return true
+    if (url.hostname.endsWith('.netlify.app')) return true
+    return false
+  } catch {
+    return false
+  }
 }
 
 function json(body, status = 200) {
@@ -234,6 +247,49 @@ export async function handleBilling(request, env, overrides = {}) {
   })
   const now = overrides.now ? overrides.now() : Math.floor(Date.now() / 1000)
   const fetchImpl = overrides.fetchImpl || fetch
+
+  if (path === '/api/auth/magic-link' && request.method === 'POST') {
+    const body = await readJson(request)
+    const email = normalizeEmail(body.value && body.value.email)
+    const redirectTo =
+      body.value && typeof body.value.redirectTo === 'string' ? body.value.redirectTo.trim() : `${ORIGIN}/account`
+    if (!email) return json({ ok: false, reason: 'email' }, 400)
+    if (!isAllowedRedirect(redirectTo)) return json({ ok: false, reason: 'redirect' }, 400)
+    const root = String(env.SUPABASE_URL || '').replace(/\/$/, '')
+    const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || ''
+    if (!root || !serviceKey) return json({ ok: false, reason: 'unavailable' }, 503)
+    const generated = await fetchImpl(`${root}/auth/v1/admin/generate_link`, {
+      method: 'POST',
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'magiclink',
+        email,
+        options: { redirect_to: redirectTo },
+      }),
+    })
+    const payload = await generated.json().catch(() => null)
+    const actionLink =
+      payload && typeof payload.action_link === 'string'
+        ? payload.action_link
+        : payload && payload.properties && typeof payload.properties.action_link === 'string'
+          ? payload.properties.action_link
+          : ''
+    if (!generated.ok || !actionLink) {
+      log('magic_link', { ok: false, reason: 'generate' })
+      return json({ ok: false, reason: 'mail' }, 502)
+    }
+    const mailed = await sendMagicLinkEmail({ to: email, actionLink, env, fetchImpl })
+    if (!mailed.ok) {
+      log('magic_link', { ok: false, reason: mailed.reason || 'mail' })
+      return json({ ok: false, reason: mailed.reason || 'mail' }, mailed.reason === 'unconfigured' ? 503 : 502)
+    }
+    log('magic_link', { ok: true })
+    return json({ ok: true })
+  }
 
   if (path === '/api/checkout' && request.method === 'POST') {
     const user = await store.userFromToken(bearer(request))
