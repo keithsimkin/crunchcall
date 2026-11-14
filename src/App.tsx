@@ -16,6 +16,7 @@ import { BuyPage } from './ui/BuyPage'
 import { LegalPage } from './ui/LegalPage'
 import { LicensePrompt } from './ui/LicensePrompt'
 import { needsLicensePrompt, sitePage } from './ui/licenseGate'
+import { routeSignedInUser } from './ui/siteAuth'
 import { SITE_URL, useLicense } from './ui/useLicense'
 import { useUpdates } from './ui/useUpdates'
 import type { AskFocus } from './features/ask/context'
@@ -524,6 +525,12 @@ export default function App() {
   }
 
   const page = typeof window === 'undefined' ? null : sitePage(window.location.pathname)
+  // Magic-link callbacks often land on `/` with tokens in the hash. Capture the
+  // session and send signed-in browsers to the account dashboard (not marketing).
+  if (!desktop && typeof window !== 'undefined') {
+    const signedIn = routeSignedInUser(window.location.pathname)
+    if (signedIn && !page) return null
+  }
   if (!desktop && page === 'buy') return <BuyPage />
   if (!desktop && page === 'account') return <AccountPage />
   if (!desktop && page === 'privacy') return <LegalPage kind="privacy" />

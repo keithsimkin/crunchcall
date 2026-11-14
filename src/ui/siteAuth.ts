@@ -47,6 +47,13 @@ function sessionFromParams(params: URLSearchParams): AuthSession | null {
   }
 }
 
+/** True when the current URL carries a magic-link callback (hash or query tokens). */
+export function hasAuthCallback(hash = window.location.hash, search = window.location.search) {
+  const fromHash = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
+  const fromQuery = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
+  return Boolean(fromHash.get('access_token') || fromQuery.get('access_token'))
+}
+
 /** Pick up a magic-link session from the URL hash or query, then clean the address bar. */
 export function captureAuthHash(hash = window.location.hash, search = window.location.search) {
   const fromHash = sessionFromParams(new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash))
@@ -54,7 +61,22 @@ export function captureAuthHash(hash = window.location.hash, search = window.loc
   const session = fromHash || fromQuery
   if (!session) return null
   writeSession(session)
-  history.replaceState({}, '', `${window.location.pathname}`)
+  history.replaceState({}, '', `${window.location.pathname}${window.location.search}`)
+  return session
+}
+
+/**
+ * After a magic link, always open the account dashboard (licenses + download)
+ * unless the callback was explicitly for /buy checkout.
+ */
+export function routeSignedInUser(pathname = window.location.pathname) {
+  const arrived = captureAuthHash()
+  const session = arrived || readSession()
+  if (!session) return null
+  if (pathname === '/buy' || pathname.startsWith('/buy/')) return session
+  if (pathname === '/account' || pathname.startsWith('/account/')) return session
+  if (pathname === '/privacy' || pathname === '/terms') return session
+  window.location.replace('/account')
   return session
 }
 
