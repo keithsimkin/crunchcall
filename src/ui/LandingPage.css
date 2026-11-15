@@ -1286,6 +1286,12 @@ html[data-desktop] .lp-drag {
   margin: 0;
 }
 
+.lp-footer-badge {
+  display: inline-block;
+  margin-top: 20px;
+  line-height: 0;
+}
+
 .lp-info {
   position: fixed;
   inset: 0;

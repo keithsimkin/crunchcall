@@ -915,6 +915,13 @@ export function LandingPage({ onOpenApp }: LandingPageProps) {
             <p>© 2026 annotated · annotated.click</p>
             <p>Windows-first · Local by default</p>
           </div>
+          <a className="lp-footer-badge" href="https://tinylaunch.com" target="_blank" rel="noopener">
+            <img
+              src="https://tinylaunch.com/tinylaunch_badge_launching_soon.svg"
+              alt="TinyLaunch Badge"
+              style={{ width: '202px', height: 'auto' }}
+            />
+          </a>
         </div>
       </footer>
 
