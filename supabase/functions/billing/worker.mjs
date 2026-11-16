@@ -329,10 +329,12 @@ export async function handleBilling(request, env, overrides = {}) {
   }
 
   if (path === '/api/checkout' && request.method === 'POST') {
+    // Guest checkout is allowed: Dodo collects email and card on its hosted page.
     const user = await store.userFromToken(bearer(request))
-    if (!user) return json({ ok: false, reason: 'auth' }, 401)
-    const owned = await store.ownedDodo(user.email)
-    if (owned && owned.license) return json({ ok: true, next: 'account' })
+    if (user) {
+      const owned = await store.ownedDodo(user.email)
+      if (owned && owned.license) return json({ ok: true, next: 'account' })
+    }
     const productId = env.DODO_PAYMENTS_PRODUCT_ID || ''
     const apiKey = env.DODO_PAYMENTS_API_KEY || ''
     if (!apiKey || !validDodoProductId(productId)) return json({ ok: false, reason: 'unavailable' }, 503)
@@ -341,8 +343,8 @@ export async function handleBilling(request, env, overrides = {}) {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(dodoCheckoutBody({
         productId,
-        email: user.email,
-        userId: user.id,
+        email: user ? user.email : '',
+        userId: user ? user.id : '',
         returnUrl: `${ORIGIN}/account`,
         cancelUrl: `${ORIGIN}/buy`,
       })),
@@ -352,7 +354,7 @@ export async function handleBilling(request, env, overrides = {}) {
       log('checkout', { ok: false, reason: 'dodo' })
       return json({ ok: false, reason: 'unavailable' }, 502)
     }
-    log('checkout', { ok: true })
+    log('checkout', { ok: true, guest: !user })
     return json({ ok: true, next: 'checkout', url: payload.checkout_url })
   }
 

@@ -10,12 +10,11 @@ On first status check the app POSTs `https://annotated.click/api/license/trial` 
 
 ## What the buyer does
 
-1. Click Purchase. The landing button opens `https://annotated.click/buy`.
-2. Enter an email. Supabase Auth sends a magic link back to `https://annotated.click/buy`. There is no password.
-3. After the link, the page calls `POST /api/checkout`. If this email already has a Dodo license, it opens `/account` instead of charging again.
-4. Otherwise Dodo Checkout opens with that email and the Auth user id in metadata.
-5. Dodo posts `payment.succeeded` to `https://annotated.click/dodo/webhook`. The function checks the webhook signature, issues one `annotated1` key, stores it on `license_orders` with `max_devices = 1`, and emails it when mail is configured.
-6. `/account` lists every key for that email, including AppSumo codes, with copy buttons, a Windows download link, and a deactivate control for each PC.
+1. Click Purchase (or Start trial / Buy two keys on the landing page). The button opens `https://annotated.click/buy`.
+2. `/buy` calls `POST /api/checkout` with no sign-in. Dodo Checkout opens; the buyer enters email and card there.
+3. If the browser already has a signed-in session and that email already has a Dodo license, `/buy` opens `/account` instead of charging again.
+4. Dodo posts `payment.succeeded` to `https://annotated.click/dodo/webhook`. The function checks the webhook signature, issues one `annotated1` key, stores it on `license_orders` with `max_devices = 1`, and emails it when mail is configured.
+5. `/account` still uses an email magic link. It lists every key for that email, including AppSumo codes, with copy buttons, a Windows download link, and a deactivate control for each PC.
 
 A Dodo account has one license key. AppSumo codes are extra rows. Each of those keys is one Windows PC (`max_devices = 1`). Older Dodo rows with `max_devices` null stay unlimited. A new Dodo key asks the license API to record this PC. If that call cannot reach the server, the key still unlocks this PC. A second PC is refused once the first activation is on file.
 
@@ -45,7 +44,7 @@ supabase functions deploy billing
 supabase functions deploy redeem
 ```
 
-`ANNOTATED_LICENSE_PRIVATE_KEY` is already the redeem function's signing key. Set it on the project if it is not there yet. `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected. `verify_jwt` is false because Dodo cannot send a Supabase JWT. Checkout and account routes check the user token themselves.
+`ANNOTATED_LICENSE_PRIVATE_KEY` is already the redeem function's signing key. Set it on the project if it is not there yet. `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected. `verify_jwt` is false because Dodo cannot send a Supabase JWT. Checkout is public (guest Dodo session). Account routes check the user token themselves.
 
 In the Dodo dashboard, the webhook URL is `https://annotated.click/dodo/webhook` and the event is `payment.succeeded`.
 

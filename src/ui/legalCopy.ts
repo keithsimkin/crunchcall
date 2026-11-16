@@ -39,7 +39,7 @@ export const legalCopy: Record<LegalKind, LegalDoc> = {
       {
         heading: 'Website and purchase',
         body: [
-          'On annotated.click, buying Unlock or opening your account uses an email magic link. We store the email, license keys, and related order records needed to fulfill and support that purchase.',
+          'On annotated.click, buying Unlock opens our payment provider’s checkout, where you enter email and card details. Opening your account uses an email magic link. We store the email, license keys, and related order records needed to fulfill and support that purchase.',
           'Payment is processed by our payment provider. We do not store your full card number on annotated.click.',
         ],
       },
