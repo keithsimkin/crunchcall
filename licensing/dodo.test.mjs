@@ -67,3 +67,16 @@ test('checkout metadata carries the signed-in email and user id', () => {
   expect(paymentMatchesProduct({ metadata: { product: 'annotated' }, product_cart: [{ product_id: 'pdt_unlock1' }] }, 'pdt_unlock1')).toBe(true)
   expect(paymentMatchesProduct({ metadata: { product: 'other' }, product_cart: [{ product_id: 'pdt_unlock1' }] }, 'pdt_unlock1')).toBe(false)
 })
+
+test('guest checkout omits customer so Dodo can collect email', () => {
+  const body = dodoCheckoutBody({
+    productId: 'pdt_unlock1',
+    email: '',
+    userId: '',
+    returnUrl: 'https://annotated.click/account',
+    cancelUrl: 'https://annotated.click/buy',
+  })
+  expect(body.customer).toBeUndefined()
+  expect(body.metadata).toEqual({ product: 'annotated', email: '', user_id: '' })
+  expect(body.product_cart).toEqual([{ product_id: 'pdt_unlock1', quantity: 1 }])
+})

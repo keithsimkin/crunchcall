@@ -3,157 +3,117 @@ import { WINDOWS_INSTALLER_URL } from './download'
 import { SiteShell } from './SiteShell'
 import { SUPPORT_EMAIL } from './legalCopy'
 import {
-  accountRequest,
-  authConfig,
   captureAuthError,
   captureAuthHash,
   consumeAuthToken,
-  hasAuthCallback,
   readSession,
-  sendMagicLink,
   takeAuthError,
   type AuthSession,
 } from './siteAuth'
 
-type BuyState = 'form' | 'sent' | 'ready' | 'owned'
+type BuyPhase = 'opening' | 'owned' | 'error'
 
-function initialState(): { session: AuthSession | null; phase: BuyState } {
-  if (typeof window !== 'undefined') {
-    const preview = new URLSearchParams(window.location.search).get('preview')
-    if (preview === 'sent') return { session: null, phase: 'sent' }
-    if (preview === 'signed') return { session: { access_token: 'preview', refresh_token: '', expires_at: 0 }, phase: 'ready' }
-    if (preview === 'owned') return { session: { access_token: 'preview', refresh_token: '', expires_at: 0 }, phase: 'owned' }
-  }
-  return { session: captureAuthHash() || readSession(), phase: 'form' }
+function previewPhase(): BuyPhase | null {
+  if (typeof window === 'undefined') return null
+  const preview = new URLSearchParams(window.location.search).get('preview')
+  if (preview === 'owned') return 'owned'
+  if (preview === 'error') return 'error'
+  return null
 }
 
-function readBootNote(): { message: string; kind: 'ok' | 'error' | 'info' } {
-  if (typeof window === 'undefined') return { message: '', kind: 'info' }
+function readBootNote(): string {
+  if (typeof window === 'undefined') return ''
   const fromCallback = captureAuthError()
-  if (fromCallback) return { message: fromCallback.message, kind: 'error' }
-  const stashed = takeAuthError()
-  if (stashed) return { message: stashed, kind: 'error' }
-  return { message: '', kind: 'info' }
+  if (fromCallback) return fromCallback.message
+  return takeAuthError() || ''
+}
+
+async function requestCheckout(session: AuthSession | null) {
+  const headers = new Headers()
+  if (session?.access_token && session.access_token !== 'preview') {
+    headers.set('authorization', `Bearer ${session.access_token}`)
+  }
+  const response = await fetch('/api/checkout', { method: 'POST', headers })
+  const payload = await response.json().catch(() => null)
+  return { response, payload }
+}
+
+function applyCheckoutResult(
+  payload: { ok?: boolean; next?: string; url?: string } | null,
+  setPhase: (phase: BuyPhase) => void,
+  setNote: (note: string) => void,
+) {
+  if (!payload || payload.ok !== true) {
+    setPhase('error')
+    setNote('Payment could not start. Try again in a moment.')
+    return
+  }
+  if (payload.next === 'account') {
+    setPhase('owned')
+    return
+  }
+  if (typeof payload.url === 'string') {
+    window.location.assign(payload.url)
+    return
+  }
+  setPhase('error')
+  setNote('Payment could not start. Try again in a moment.')
 }
 
 export function BuyPage() {
-  const start = initialState()
-  const [session, setSession] = useState<AuthSession | null>(start.session)
-  const [phase, setPhase] = useState<BuyState>(start.session && start.phase === 'form' ? 'ready' : start.phase)
-  const [email, setEmail] = useState('')
-  const [boot] = useState(readBootNote)
-  const [note, setNote] = useState(boot.message)
-  const [noteKind, setNoteKind] = useState<'ok' | 'error' | 'info'>(boot.kind)
+  const preview = previewPhase()
+  const [phase, setPhase] = useState<BuyPhase>(preview || 'opening')
+  const [note, setNote] = useState(() => (preview === 'error' ? 'Payment could not start. Try again in a moment.' : readBootNote()))
   const [busy, setBusy] = useState(false)
-  const [signingIn, setSigningIn] = useState(() => typeof window !== 'undefined' && hasAuthCallback() && !readSession())
-  const ready = authConfig().ready || phase === 'sent' || phase === 'ready' || phase === 'owned'
-  const noteClass = noteKind === 'error' ? 'site-pass-note is-error' : noteKind === 'ok' ? 'site-pass-note is-ok' : 'site-pass-note'
+
+  async function openCheckout(session: AuthSession | null) {
+    setBusy(true)
+    setPhase('opening')
+    setNote('')
+    try {
+      const { payload } = await requestCheckout(session)
+      applyCheckoutResult(payload, setPhase, setNote)
+    } catch {
+      setPhase('error')
+      setNote('Payment could not start. Try again in a moment.')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   useEffect(() => {
-    let cancel = false
-    void consumeAuthToken().then(({ session: next, error }) => {
-      if (cancel) return
-      setSigningIn(false)
+    if (preview) return
+    let live = true
+    void (async () => {
+      const { session: fromLink, error } = await consumeAuthToken()
+      if (!live) return
       if (error) {
-        setNoteKind('error')
+        // Still open guest checkout; account recovery stays on /account.
         setNote(error)
-        setPhase('form')
-        return
       }
-      if (next) {
-        setSession(next)
-        setPhase('ready')
+      const session = fromLink || captureAuthHash() || readSession()
+      setBusy(true)
+      try {
+        const { payload } = await requestCheckout(session)
+        if (!live) return
+        applyCheckoutResult(payload, setPhase, setNote)
+      } catch {
+        if (!live) return
+        setPhase('error')
+        setNote('Payment could not start. Try again in a moment.')
+      } finally {
+        if (live) setBusy(false)
       }
-    })
+    })()
     return () => {
-      cancel = true
+      live = false
     }
-  }, [])
-
-  async function sendLink() {
-    setBusy(true)
-    setNote('')
-    setNoteKind('info')
-    const result = await sendMagicLink(email.trim(), `${window.location.origin}/buy`)
-    setBusy(false)
-    if (!result.ok) {
-      setNoteKind('error')
-      setNote(result.reason === 'config' ? 'Sign-in is not set up on this site yet.' : 'The email could not be sent. Try again in a moment.')
-      return
-    }
-    setNoteKind('ok')
-    setPhase('sent')
-  }
-
-  async function continueToPayment() {
-    if (!session || session.access_token === 'preview') {
-      setPhase('owned')
-      return
-    }
-    setBusy(true)
-    setNote('')
-    setNoteKind('info')
-    const { response, payload } = await accountRequest('/api/checkout', session, { method: 'POST' })
-    setBusy(false)
-    if (response.status === 401) {
-      setSession(null)
-      setPhase('form')
-      setNoteKind('error')
-      setNote('That sign-in expired. Request a new link.')
-      return
-    }
-    if (!payload || payload.ok !== true) {
-      setNoteKind('error')
-      setNote('Payment could not start. Try again in a moment.')
-      return
-    }
-    if (payload.next === 'account') {
-      setPhase('owned')
-      return
-    }
-    if (typeof payload.url === 'string') window.location.assign(payload.url)
-  }
-
-  if (signingIn && !session) {
-    return (
-      <SiteShell tone="auth">
-        <div className="site-login">
-          <section className="site-pass">
-            <h1>Signing you in…</h1>
-            <p className="site-pass-lead">One moment while we continue to checkout.</p>
-          </section>
-        </div>
-      </SiteShell>
-    )
-  }
+  }, [preview])
 
   return (
     <SiteShell tone="auth">
       <div className="site-login">
         <section className="site-pass">
-          {phase === 'sent' ? (
-            <>
-              <h1>Check your inbox</h1>
-              <p className="site-pass-lead">
-                We emailed a sign-in link{email ? ` to ${email}` : ''}. Open it to continue to checkout.
-              </p>
-              <p className="site-pass-note is-ok">
-                Sent from hello@annotated.click. If you do not see it in a minute, check your spam or junk folder.
-              </p>
-              <button
-                type="button"
-                className="site-pass-go"
-                disabled={busy || !email.trim()}
-                onClick={() => void sendLink()}
-              >
-                {busy ? 'Sending…' : 'Send the email again'}
-              </button>
-              <p className="site-pass-help">
-                Still nothing?{' '}
-                <a href={`mailto:${SUPPORT_EMAIL}?subject=annotated%20buy%20help`}>Email us</a>
-              </p>
-            </>
-          ) : null}
           {phase === 'owned' ? (
             <>
               <h1>You already have Unlock</h1>
@@ -165,51 +125,34 @@ export function BuyPage() {
               </div>
             </>
           ) : null}
-          {phase === 'ready' ? (
+          {phase === 'opening' ? (
             <>
-              <h1>Continue to checkout</h1>
-              <p className="site-pass-lead">You are signed in. One payment covers this Windows PC.</p>
-              <button type="button" className="site-pass-go" disabled={busy} onClick={() => void continueToPayment()}>
-                {busy ? 'Opening checkout…' : 'Continue to checkout'}
+              <h1>Opening checkout…</h1>
+              <p className="site-pass-lead">
+                You are headed to the payment page. Enter your email and card there — no sign-in first.
+              </p>
+              <button type="button" className="site-pass-go" disabled={busy} onClick={() => void openCheckout(readSession())}>
+                {busy ? 'Opening…' : 'Continue to payment'}
               </button>
             </>
           ) : null}
-          {phase === 'form' ? (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault()
-                void sendLink()
-              }}
-            >
-              <h1>Buy Unlock</h1>
-              <p className="site-pass-lead">Hey — enter your email and we will send a sign-in link. No password.</p>
-              <label htmlFor="buy-email">Email</label>
-              <input
-                id="buy-email"
-                type="email"
-                autoComplete="email"
-                required
-                placeholder="you@company.com"
-                value={email}
-                disabled={!ready || busy}
-                onChange={(event) => setEmail(event.target.value)}
-              />
+          {phase === 'error' ? (
+            <>
+              <h1>Could not open checkout</h1>
+              <p className="site-pass-lead">Try again, or email us if it keeps failing.</p>
+              <button type="button" className="site-pass-go" disabled={busy} onClick={() => void openCheckout(readSession())}>
+                {busy ? 'Opening…' : 'Try payment again'}
+              </button>
               <p className="site-pass-help">
-                Having trouble?{' '}
+                Need help?{' '}
                 <a href={`mailto:${SUPPORT_EMAIL}?subject=annotated%20buy%20help`}>Email us</a>
               </p>
-              <button type="submit" className="site-pass-go" disabled={busy || !authConfig().ready}>
-                {busy ? 'Sending…' : 'Sign in to buy'}
-              </button>
-            </form>
+            </>
           ) : null}
           {note ? (
-            <p className={noteClass} role={noteKind === 'error' ? 'alert' : 'status'}>
+            <p className={phase === 'error' ? 'site-pass-note is-error' : 'site-pass-note'} role={phase === 'error' ? 'alert' : 'status'}>
               {note}
             </p>
-          ) : null}
-          {!authConfig().ready && phase === 'form' ? (
-            <p className="site-pass-note is-error">Sign-in is not set up on this site yet.</p>
           ) : null}
           <a className="site-pass-download" href={WINDOWS_INSTALLER_URL}>
             Download annotated for Windows

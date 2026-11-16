@@ -79,13 +79,16 @@ export function emailFromDodoPayment(payment) {
 }
 
 export function dodoCheckoutBody({ productId, email, userId, returnUrl, cancelUrl }) {
-  return {
+  const normalized = typeof email === 'string' ? email.trim().toLowerCase() : ''
+  const body = {
     product_cart: [{ product_id: productId, quantity: 1 }],
-    customer: { email },
     return_url: returnUrl,
     cancel_url: cancelUrl,
-    metadata: { product: PRODUCT, email, user_id: userId || '' },
+    metadata: { product: PRODUCT, email: normalized, user_id: userId || '' },
   }
+  // Omit customer so Dodo hosted checkout collects email + card itself.
+  if (normalized) body.customer = { email: normalized }
+  return body
 }
 
 export function planDodoLicense({ paymentId, email, existingPayment, owned }) {

@@ -44,6 +44,29 @@ function payment(id, email, userId = 'user_1') {
   }
 }
 
+test('guest checkout opens dodo without a sign-in', async () => {
+  const material = keys()
+  const store = createMemoryBilling()
+  let checkout
+  const fetchImpl = async (_url, init) => {
+    checkout = { body: JSON.parse(init.body) }
+    return Response.json({ checkout_url: 'https://test.checkout.dodopayments.com/session/cks_guest' })
+  }
+  const response = await handleBilling(
+    new Request('https://annotated.click/api/checkout', { method: 'POST' }),
+    env(material),
+    { store, fetchImpl, now: () => NOW },
+  )
+  expect(await response.json()).toEqual({
+    ok: true,
+    next: 'checkout',
+    url: 'https://test.checkout.dodopayments.com/session/cks_guest',
+  })
+  expect(checkout.body.customer).toBeUndefined()
+  expect(checkout.body.metadata.user_id).toBe('')
+  expect(JSON.stringify(checkout.body)).not.toContain('dodo_test_key')
+})
+
 test('checkout sends the signed-in buyer to dodo once, then to the account', async () => {
   const material = keys()
   const store = createMemoryBilling()
